@@ -1,0 +1,19 @@
+:root{--cream:#F8F3E8;--card:#FFFCF5;--sage:#7E9C84;--sageD:#4F6B56;--sageS:#E1EBDD;--ink:#2F3A33;--mute:#7A8478;--line:#E7E0CE;--warn:#B9824A;--danger:#B5594C}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--cream);color:var(--ink);font:16px/1.4 -apple-system,system-ui,sans-serif;-webkit-text-size-adjust:100%}
+main{padding:calc(env(safe-area-inset-top,0px) + 14px) 14px 96px;max-width:640px;margin:0 auto}
+h1{font-size:24px;margin:4px 0 12px}h2{font-size:15px;margin:18px 0 6px;color:var(--sageD);text-transform:uppercase;letter-spacing:.04em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:8px 0}
+.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.grow{flex:1}.mute{color:var(--mute);font-size:14px}
+.stat{flex:1;text-align:center}.stat b{display:block;font-size:19px}
+input,select,textarea,button{font:inherit;font-size:16px;color:var(--ink)}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:3px 0}
+button{border:0;border-radius:10px;padding:10px 14px;background:var(--sage);color:#fff;font-weight:600}
+button.ghost{background:var(--sageS);color:var(--sageD)}button.del{background:none;color:var(--danger);padding:6px 8px}
+form{display:grid;gap:4px}.item{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.item:last-child{border:0}
+.done{text-decoration:line-through;color:var(--mute)}.over{color:var(--danger)}.pos{color:var(--sageD)}.neg{color:var(--danger)}
+.bar{height:8px;background:var(--sageS);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--sage)}.bar.over i{background:var(--danger)}
+#tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+#tabs button{flex:1;background:none;color:var(--mute);border-radius:0;padding:10px 0;font-size:12px}#tabs button.on{color:var(--sageD)}#tabs span{display:block;font-size:20px}
+#banner{background:var(--warn);color:#fff;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 8px;font-size:14px}
+input[type=checkbox]{width:24px;height:24px;margin:0}

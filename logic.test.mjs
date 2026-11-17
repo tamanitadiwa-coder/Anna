@@ -1,0 +1,24 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import * as L from '../logic.js';
+const T = new Date(2026, 10, 18, 12).getTime();
+test('parseCents', () => { assert.equal(L.parseCents('12.5'), 1250); assert.equal(L.parseCents('1,000'), 100000); assert.equal(L.parseCents('0.1'), 10); assert.equal(L.parseCents('abc'), null); assert.equal(L.parseCents('0'), null); assert.equal(L.parseCents('1.234'), null); });
+test('month summary & budgets', () => { const s = L.emptyState();
+  s.tx.push({ kind: 'income', amount_cents: 5000, category: 'Pay', occurred_at: T }, { kind: 'expense', amount_cents: 1200, category: 'Food', occurred_at: T }, { kind: 'expense', amount_cents: 999, category: 'Food', occurred_at: new Date(2026, 9, 3).getTime() });
+  s.budgets.push({ category: 'food', limit_cents: 1000 });
+  assert.deepEqual(L.monthSummary(s, T), { income: 5000, expense: 1200, net: 3800 });
+  const b = L.budgetStatus(s, T)[0]; assert.equal(b.spent, 1200); assert.equal(b.over, true); });
+test('bills roll monthly and record expense', () => { const s = L.emptyState(); const d = new Date(2026, 0, 31, 12).getTime();
+  s.bills.push({ id: 'a', name: 'Rent', amount_cents: 100, due_at: d, repeat_monthly: 1, paid: 0 }, { id: 'b', name: 'Once', amount_cents: 50, due_at: d, repeat_monthly: 0, paid: 0 });
+  L.payBill(s, 'a', { now: T }); L.payBill(s, 'b', { recordExpense: false, now: T });
+  assert.equal(new Date(s.bills[0].due_at).getMonth(), 1); assert.equal(new Date(s.bills[0].due_at).getDate(), 28);
+  assert.equal(s.bills[1].paid, 1); assert.equal(s.tx.length, 1); });
+test('business is cash basis', () => { const s = L.emptyState();
+  s.biz.push({ kind: 'sale', amount_cents: 1000, status: 'paid', occurred_at: T }, { kind: 'invoice', amount_cents: 500, status: 'unpaid', occurred_at: T, paid_at: null },
+    { kind: 'invoice', amount_cents: 700, status: 'paid', occurred_at: new Date(2026, 8, 1).getTime(), paid_at: T }, { kind: 'expense', amount_cents: 300, status: 'paid', occurred_at: T });
+  assert.deepEqual(L.businessSummary(s, T), { revenue: 1700, expenses: 300, profit: 1400, unpaid: 500 }); });
+test('backup validation', () => { const good = JSON.stringify(L.emptyState());
+  assert.equal(L.validateBackup(good).ok, true); assert.equal(L.validateBackup('{').ok, false);
+  assert.equal(L.validateBackup('{"app":"x"}').ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), schema: 99 })).ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tx: [{ amount_cents: 1.5 }] })).ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tasks: undefined })).ok, false); });
