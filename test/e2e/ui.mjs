@@ -41,7 +41,12 @@ try {
   await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 20000 });
   // ---------- owner lock: first run ----------
   R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0, 'fresh install opens locked: no tabs or data visible');
-  R.ok(/Jamal Tamani/.test(await page.locator('.lockv').innerText()) && await page.locator('form[data-form="setup"]').count() === 1, 'first run greets the owner and asks to create a password');
+  const wtext = await page.locator('.welcome').innerText();
+  R.ok(/ANNA/.test(wtext) && /Hey, Jamal\./.test(wtext) && /Your space\. Your thoughts\. Your ANNA\./.test(wtext) && await page.locator('.welcome .orb').count() === 1 && await page.locator('[data-act="meet"]').innerText() === 'Meet ANNA', 'welcome screen: ANNA, orb, "Hey, Jamal.", tagline, Meet ANNA');
+  R.ok((await page.locator('.powered').innerText()) === 'POWERED BY TAMANY.TECH', 'welcome footer: POWERED BY TAMANY.TECH');
+  R.ok(await page.evaluate(() => document.fonts.check('300 20px Jost')) && /Jost/.test(await page.evaluate(() => getComputedStyle(document.querySelector('.hey')).fontFamily)), 'Jost font loaded from the app itself (offline)');
+  await page.click('[data-act="meet"]');
+  R.ok(/Jamal Tamani/.test(await page.locator('.access').innerText()) && await page.locator('form[data-form="setup"]').count() === 1, 'Meet ANNA opens password setup with a privacy note for the owner');
   await page.fill('[name="pw"]', 'short'); await page.fill('[name="pw2"]', 'short'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/at least 8/.test(await page.locator('.lockv .warn').innerText()), 'weak password refused');
   await page.fill('[name="pw"]', 'anna-test-pass-1'); await page.fill('[name="pw2"]', 'different-pass-1'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/do not match/.test(await page.locator('.lockv .warn').innerText()), 'mismatched passwords refused');
   await ready(page, 20000); R.ok(!(await page.evaluate(() => window.__anna.locked)), 'password created and Anna unlocked');
@@ -50,9 +55,12 @@ try {
   R.ok(/Jamal/.test(await page.locator('h1').innerText()), 'home greets Jamal by default');
   // ---------- first run ----------
   R.ok(await page.locator('#tabs button').count() === 5, 'five main tabs render');
-  R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)');
-  R.ok(/rgb\((1[0-9]|[0-9]), (1[0-9]|[0-9]), (1[0-9]|[0-9])\)/.test(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)), 'black theme background');
-  for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
+  await page.waitForFunction(() => /not installed/.test(document.querySelector('#pstatus')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  R.ok(await page.locator('.presence .orb[data-s="off"]').count() === 1 && /not installed/.test(await page.locator('#pstatus').innerText()), 'Home: central orb resting, honest status (brain not installed)');
+  R.ok(await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(0, 0, 0)', 'pure black background');
+  await page.click('#awake'); await page.waitForTimeout(300); R.ok(/Brain/.test(await page.locator('h1').innerText()) && /Install/.test(await page.locator('#toast').innerText()), 'awake toggle without a model leads to Brain to install it'); await tabTo('home');
+  await tabTo('money'); R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)'); await tabTo('home');
+    for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
   await page.click('.top [data-tab="data"]'); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'Settings opens from the gear button'); await layoutOk('settings');
   // ---------- tasks ----------
   await tabTo('tasks'); await page.click('[data-act="open"][data-id="task"]'); await layoutOk('new-task sheet');
@@ -182,7 +190,7 @@ try {
   R.ok(await page.locator('.brand img.ulogo').count() === 1 && /^data:image\/png/.test(await page.locator('.brand img.ulogo').getAttribute('src')), 'uploaded logo replaces the brand logo');
   R.ok(/^data:image\/png/.test(await page.evaluate(() => document.querySelector('link[rel="apple-touch-icon"]').href)), 'uploaded logo is used as the Home Screen icon for new installs');
   // ---------- lock now / change password ----------
-  await page.click('[data-act="lock"]'); R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0 && await page.locator('.lockv img.biglogo').count() === 1, 'Lock now hides everything and shows the owner logo');
+  await page.click('[data-act="lock"]'); R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0 && await page.locator('.access img.biglogo').count() === 1, 'Lock now hides everything and shows the owner logo');
   await page.fill('form[data-form="unlock"] [name="pw"]', 'wrong-password-1'); await page.click('form[data-form="unlock"] button'); await page.waitForTimeout(800); R.ok(/Wrong password/.test(await page.locator('.lockv').innerText()) && await page.evaluate(() => window.__anna.locked), 'wrong password does not unlock');
   await ready(page); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'unlock returns to the page you were on'); await page.click('[data-act="open"][data-id="chpw"]');
   await page.fill('[name="old"]', 'nope-nope-1'); await page.fill('[name="pw"]', 'new-pass-word-2'); await page.fill('[name="pw2"]', 'new-pass-word-2'); await page.click('form[data-form="chpw"] button'); await page.waitForTimeout(800); R.ok(/Current password is wrong/.test(await toastText()), 'change password requires the current password');
@@ -194,7 +202,7 @@ try {
   const after = await S(); R.ok(JSON.stringify(after) === snap, 'all data identical after closing and reopening the browser (IndexedDB)');
   R.ok(after.settings.name === 'Tamani' && after.settings.currency === 'R', 'settings persist');
   R.ok(await page.locator('.brand img.ulogo').count() === 1, 'custom logo persists after restart');
-  await page.click('.top [data-tab="data"]'); await page.click('[data-act="logo-reset"]'); await page.waitForSelector('.brand svg', { timeout: 5000 }).catch(() => {}); R.ok(await page.locator('.brand img.ulogo').count() === 0 && await page.locator('.brand svg').count() === 1, 'reset logo returns to the default', JSON.stringify({ img: await page.locator('.brand img.ulogo').count(), svg: await page.locator('.brand svg').count(), h1: await page.locator('h1').innerText() }));
+  await page.click('.top [data-tab="data"]'); await page.click('[data-act="logo-reset"]'); await page.waitForSelector('.brand .orb', { timeout: 5000 }).catch(() => {}); R.ok(await page.locator('.brand img.ulogo').count() === 0 && await page.locator('.brand .orb').count() === 1, 'reset logo returns to the default orb', JSON.stringify({ img: await page.locator('.brand img.ulogo').count(), svg: await page.locator('.brand svg').count(), h1: await page.locator('h1').innerText() }));
   // ---------- offline app shell ----------
   await page.evaluate(() => navigator.serviceWorker.ready); await ctx.close(); srv.closeAllConnections?.(); await new Promise((r) => srv.close(r));
   ({ ctx, page } = await open()); await ctx.setOffline(true); await page.goto(url).catch(() => {}); const off = await ready(page, 20000).then(() => true, () => false);

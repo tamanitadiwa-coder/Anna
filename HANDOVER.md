@@ -1,8 +1,14 @@
-# ANNA — engineering handover (v0.4.1)
+# ANNA — engineering handover (v0.5.0)
 
 Last updated: 2026-11-18 · Repository: `tamanitadiwa-coder/Anna` · Working branch: `claude/anna-completion-deployment-t9c6gw` · Live URL: https://tamanitadiwa-coder.github.io/Anna/
 
 Legend: ✅ implemented and tested · 🟡 implemented, not verified on a real iPhone · ⏸ planned / paused
+
+## 0. v0.5.0 changes (design + iPhone loading)
+- **Identity:** pure black, ice-blue light (#A9DFFF / #75CFFF / #EAF7FF, midnight #080D18), glass rounded buttons, Jost (bundled locally in `fonts/`, 26 KB, works offline), system font for body text. The glowing **orb** (pure CSS, no image assets) is the logo, the Home centre and the app icon. Orb states: off (brain not loaded), rest (breathing), listen (chat open), think (loading / reading the question; rotating light ring), speak (answer streaming). Animations use transform/opacity only; reduced-motion respected.
+- **Welcome:** ANNA · orb · “Hey, Jamal.” (uses the greeting name from Preferences, owner first name by default) · “Your space. Your thoughts. Your ANNA.” · **Meet ANNA** · POWERED BY TAMANY.TECH. Then the restyled password screen (same PBKDF2 logic, unchanged credentials handling).
+- **Home:** orb, name, live status line, **ANNA is awake** toggle (loads/unloads the model; leads to Brain if not installed), **Talk to ANNA**, plus only today’s priorities and next reminders. Charts stay in Money/Business. All five sections and Settings kept.
+- **iPhone loading investigation (no device available to reproduce):** measured llama.cpp allocations: weights 374 MB + KV 24 MB + compute 38 MB at the old settings (`n_ctx 2048, n_batch 512`). File reads in Safari mode are already buffered (1 MB blocks), so reading is not the bottleneck. Most likely cause of the 4–7 min loads: memory pressure in Safari’s single-threaded WebAssembly build. Changes: `n_ctx 1536, n_batch 128` (KV 18 MB, compute ~9 MB, load ~30% faster in tests); loading now shows named stages (Reading the model → Loading into memory → Preparing memory → Starting the engine → First test answer) with elapsed seconds; a note after 90 s; **Cancel** (model stays installed); the self-test is capped at 2 minutes with a clear message. The installed model was not touched (same file, same checksum). Lighter fallback if the iPhone still cannot load it: SmolLM2-360M-Instruct Q4_K_M (~270 MB, smaller vocabulary); not added yet because it is weaker and was not verified.
 
 ## 1. Architecture
 Static offline-first web app (PWA). No server, no accounts service, no paid APIs.
@@ -83,6 +89,8 @@ After closing Anna or restarting the phone: unlock, then Brain → Load into mem
 3. Download the AI model again on the new device (it is not in backups).
 
 ## 13. Tests (final state; details in docs/TEST-REPORT.md)
+v0.5.0: unit 38/38 · UI iPhone 15 emulation 140/140 · UI desktop 140/140 · real model, Safari engine path 34/34 (incl. loading stages, orb think→speak, Home toggle wake after offline restart). Earlier rows below are kept for history.
+
 | Suite | Result | Code version |
 |---|---|---|
 | Unit + build (`npm test`) | 38/38 ✅ | v0.4.1 |

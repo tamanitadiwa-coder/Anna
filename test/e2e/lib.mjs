@@ -23,6 +23,7 @@ export const TEST_PW = 'anna-test-pass-1';
 export async function ready(page, timeout = 30000) {
   await page.waitForFunction(() => window.__anna, null, { timeout });
   if (await page.evaluate(() => window.__anna.locked)) {
+    if (await page.locator('[data-act="meet"]').count()) await page.click('[data-act="meet"]');
     if (await page.locator('form[data-form="setup"]').count()) { await page.fill('form[data-form="setup"] [name="pw"]', TEST_PW); await page.fill('form[data-form="setup"] [name="pw2"]', TEST_PW); await page.click('form[data-form="setup"] button'); }
     else { await page.fill('form[data-form="unlock"] [name="pw"]', TEST_PW); await page.click('form[data-form="unlock"] button'); }
     await page.waitForFunction(() => !window.__anna.locked, null, { timeout: 30000 });
