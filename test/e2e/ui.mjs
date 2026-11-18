@@ -127,6 +127,7 @@ try {
   await page.click('.chips button:has-text("Health")'); R.ok(await page.locator('#memlist .card').count() === 1, 'filter memories by category'); await page.click('.chips button:has-text("All")');
   await page.click('#memlist .card:has-text("penicillin") [data-act="edit"]'); await fill({ content: 'Allergic to penicillin and amoxicillin' }); await submit(); s = await S(); R.ok(s.mem.some((m) => /amoxicillin/.test(m.content)), 'edit memory');
   await page.click('#memlist .card:has-text("VAT") [data-act="fb-up"]'); s = await S(); R.ok(s.mem.find((m) => /VAT/.test(m.content)).helpful_count === 1 && s.fb.length === 1, 'memory feedback recorded');
+  await page.click('#memlist .card:has-text("amoxicillin") [data-act="fb-down"]'); s = await S(); R.ok(s.mem.find((m) => /amoxicillin/.test(m.content)).incorrect_count === 1, '"Not right" feedback recorded');
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="del"]'); s = await S(); R.ok(s.mem.length === 1, 'delete memory');
   const sw = page.locator('.swrow:has-text("Money") .sw'); const before = await sw.getAttribute('aria-checked'); await sw.click(); R.ok((await sw.getAttribute('aria-checked')) !== before, 'privacy switch toggles'); await page.locator('.swrow:has-text("Money") .sw').click();
   await page.click('details summary'); await layoutOk('brain with Advanced open'); const gpu = page.locator('.swrow:has-text("GPU") .sw'); await gpu.click(); R.ok(await gpu.getAttribute('aria-checked') === 'true', 'GPU switch toggles and is not covered by its label');
@@ -135,6 +136,7 @@ try {
   await tabTo('home'); await page.click('.ask'); R.ok(/can’t answer yet/.test(await page.locator('#chatmain').innerText()), 'chat explains the AI is not installed'); R.ok(await page.locator('#send').isDisabled(), 'Send is disabled until the AI is ready');
   await page.evaluate(() => { window.__anna.S.chat.push({ role: 'user', content: 'Earlier question', at: Date.now() }, { role: 'assistant', content: 'Earlier answer', at: Date.now() }); }); await page.click('[data-act="close"]'); await page.click('.ask');
   R.ok(await page.locator('.bub', { hasText: 'Earlier answer' }).count() === 1, 'chat history is readable without the model'); await layoutOk('chat');
+  await page.click('[data-act="chat-to-brain"]'); R.ok(/Brain/.test(await page.locator('h1').innerText()) && await page.locator('#sheet .chat').count() === 0, '"Open Brain setup" button goes to Brain'); await tabTo('home'); await page.click('.ask');
   await page.click('[data-act="chat-clear"]'); s = await S(); R.ok(s.chat.length === 0, 'clear conversation (after confirmation)'); await page.click('[data-act="close"]');
   await page.evaluate(() => { window.__anna.S.chat.push({ role: 'user', content: 'Kept question', at: Date.now() }, { role: 'assistant', content: 'Kept answer', at: Date.now() }); });
   // ---------- settings ----------
@@ -148,10 +150,20 @@ try {
   R.ok(bkJson.app === 'anna-web' && bkJson.tasks.length === before2.tasks.length && bkJson.reminders.length === before2.reminders.length && bkJson.chat.length === 2 && bkJson.mem.length === 1 && bkJson.biz.length === 2, 'export backup contains every record type incl. reminders and chat', bk.suggestedFilename());
   dialogs = []; await page.click('[data-act="erase"]'); await page.waitForFunction(() => window.__anna.S.tasks.length === 0, null, { timeout: 5000 }).catch(() => {}); s = await S(); R.ok(dialogs.length === 2 && s.tasks.length === 0 && s.tx.length === 0 && s.chat.length === 0, 'erase all data (two confirmations)', JSON.stringify({ d: dialogs, t: s.tasks.length, x: s.tx.length, c: s.chat.length, tab: await page.locator('h1').innerText() }));
   await page.click('.top [data-tab="data"]'); await page.setInputFiles('#file', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"app":"other"}') }); await page.waitForTimeout(300); R.ok(/not an Anna Web backup/.test(await toastText()), 'invalid backup file is refused', await toastText());
-  await page.setInputFiles('#file', bkPath); R.ok(/Restore this backup/.test(await page.locator('#sheet').innerText()) && /Backup/.test(await page.locator('#sheet .status').innerText()), 'restore shows a preview before overwriting');
+  await page.setInputFiles('#file', bkPath); await page.waitForSelector('#sheet [data-act="restore-confirm"]', { timeout: 5000 }).catch(() => {}); R.ok(/Restore this backup/.test(await page.locator('#sheet').innerText()) && /Backup/.test(await page.locator('#sheet .status').innerText()), 'restore shows a preview before overwriting');
   await page.click('[data-act="restore-confirm"]'); await page.waitForTimeout(300); R.ok(/Restored and verified/.test(await toastText()), 'restore completes and verifies what was saved', await toastText());
   s = await S(); R.ok(JSON.stringify([s.tasks, s.tx, s.bills, s.budgets, s.biz, s.mem, s.reminders, s.chat]) === JSON.stringify([before2.tasks, before2.tx, before2.bills, before2.budgets, before2.biz, before2.mem, before2.reminders, before2.chat]), 'restored records are identical to the originals');
   R.ok(await page.locator('[data-act="undo-restore"]').count() === 1, 'undo-restore is offered');
+  dialogs = []; await page.click('[data-act="undo-restore"]'); await page.waitForTimeout(400); s = await S(); R.ok(dialogs.length === 1 && s.tasks.length === 0, 'undo-restore puts back the pre-restore data (the erased state)');
+  await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="undo-restore"]'); await page.waitForTimeout(400); s = await S(); R.ok(s.tasks.length === before2.tasks.length, 'undo again returns the restored data');
+  await ctx.grantPermissions(['notifications', 'clipboard-read', 'clipboard-write']); await tabTo('home'); await page.click('.top [data-tab="data"]');
+  const nb = page.locator('[data-act="notif"]'); if (await nb.count()) await nb.click(); await page.waitForTimeout(300);
+  const perm = await page.evaluate(() => Notification.permission), ns = await page.locator('.card:has-text("Reminder alerts") .status').innerText();
+  R.ok({ granted: /Allowed/, denied: /Blocked/, default: /Not yet allowed/ }[perm].test(ns), 'notification status matches the browser permission', `${perm}: ${ns.replace(/\s+/g, ' ')}`);
+  if (perm === 'granted') { await page.click('[data-act="notif-test"]'); await page.waitForTimeout(500); R.ok(/Test alert sent/.test(await toastText()), 'test notification is shown through the service worker', await toastText()); }
+  else R.note('Notification delivery not testable here: headless Chromium always reports permission "denied".');
+  await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 }); await page.click('[data-act="diag-copy"]'); await page.waitForTimeout(200);
+  R.ok(/Report copied/.test(await toastText()) && /VERDICT/.test(await page.evaluate(() => navigator.clipboard.readText())), 'Copy report puts the diagnostics on the clipboard');
   // ---------- persistence across a full browser restart ----------
   const snap = JSON.stringify(await S()); await ctx.close(); ({ ctx, page } = await open()); await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 20000 });
   const after = await S(); R.ok(JSON.stringify(after) === snap, 'all data identical after closing and reopening the browser (IndexedDB)');

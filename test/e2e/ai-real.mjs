@@ -64,6 +64,7 @@ try {
   // 4: ask online (general question + a question about the user's own data)
   await page.evaluate(() => { const S = window.__anna.S; S.tx.push({ id: 'e1', kind: 'expense', amount_cents: 45000, category: 'Groceries', occurred_at: Date.now() }, { id: 'e2', kind: 'income', amount_cents: 1200000, category: 'Salary', occurred_at: Date.now() }); S.mem.push({ id: 'm1', content: 'My sister Lindiwe’s birthday is on 3 March', category: 'Family', status: 'confirmed', created_at: Date.now() }); });
   await page.click('[data-act="chat-open"] >> nth=0');
+  R.ok(await page.locator('[data-act="chat-suggest"]').count() === 4, 'suggested questions are offered in an empty chat');
   for (const q of ['In one sentence, what is an emergency fund?', 'How much did I spend on groceries this month?']) {
     const a = await ask(page, q); evidence.answers.push({ phase: 'online', q, ...a });
     R.ok(a.text && !a.error && a.text.length > 5, `ONLINE answer to "${q}"`, `${(a.ms / 1000).toFixed(1)}s: ${a.text || a.error}`);
@@ -76,6 +77,12 @@ try {
     const a = await ask(page, q); evidence.answers.push({ phase: 'offline', q, ...a });
     R.ok(a.text && !a.error, `OFFLINE answer to "${q}"`, `${(a.ms / 1000).toFixed(1)}s: ${a.text || a.error}`);
   }
+  // Stop button: start a long answer and stop it; the partial answer is kept and Anna is usable again
+  await page.fill('.chatin textarea', 'Write a detailed 300-word essay about saving money in South Africa.'); await page.click('#send');
+  await page.waitForFunction(() => (window.__anna.S.chat.at(-1).content || '').length > 15, null, { timeout: 300000, polling: 300 }); await page.click('[data-act="chat-stop"]');
+  await page.waitForFunction(() => !window.__anna.AI.ai.busy, null, { timeout: 60000 }); const stopped = await page.evaluate(() => window.__anna.S.chat.at(-1));
+  R.ok(stopped.content && !stopped.error && stopped.content.split(' ').length < 200, 'Stop ends a long answer early and keeps the partial text', stopped.content.length + ' chars');
+  R.ok(await page.locator('#send').isEnabled(), 'Send is available again after stopping');
   R.ok(/March|3/.test(evidence.answers.at(-2).text), 'offline answer used saved memory (birthday = 3 March)', evidence.answers.at(-2).text);
   const chatLen = await page.evaluate(() => window.__anna.S.chat.length);
   // unload works

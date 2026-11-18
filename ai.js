@@ -43,30 +43,38 @@ export function friendly(e) {
 
 // ---- engine files (copied into vendor/ by scripts/vendor.mjs) ----
 async function manifest() { try { const r = await fetch('vendor/manifest.json', { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; } }
-async function getW() {
-  if (W) return W;
+let modP = null, cmP = null, wP = null;
+async function engineManifest() {
   const m = await manifest();
   if (!m?.engine?.ok) throw new Error('The AI engine files are missing from this installation' + (m?.engine?.missing?.length ? ` (${m.engine.missing.join(', ')})` : '') + '. Open Anna once with internet so it can finish installing.');
-  mod ||= await import(abs(m.engine.entry));
-  // The engine runs in a blob: worker. Whether a service worker may answer requests from such a worker differs between
-  // browsers, so the .wasm it needs is fetched here (served from the offline cache) and handed over as a blob: URL.
-  const compat = !engineFast(), wasm = compat ? m.engine.compat.wasm : m.engine.wasm;
-  const r = await fetch(abs(wasm)); if (!r.ok) throw new Error('Could not read engine file ' + wasm + ' (' + r.status + ')');
-  if (wasmBlobUrl) URL.revokeObjectURL(wasmBlobUrl);
-  const wasmUrl = wasmBlobUrl = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'application/wasm' }));
-  W = new mod.Wllama({ default: compat ? abs(m.engine.wasm) : wasmUrl }, { allowOffline: true, logger: mod.LoggerWithoutDebug });
-  W.setCompat({ wasm: compat ? wasmUrl : abs(m.engine.compat.wasm), worker: abs(m.engine.compat.worker) });
-  set({ engine: { version: m.engine.version, files: m.engine.files.length } });
-  return W;
+  return m;
+}
+const getMod = () => (modP ||= engineManifest().then(async (m) => { mod = await import(abs(m.engine.entry)); set({ engine: { version: m.engine.version, files: m.engine.files.length } }); return m; }).catch((e) => { modP = null; throw e; }));
+// Model storage (OPFS) only: status, download, verify and delete never need the 14 MB engine in memory.
+const getCM = () => (cmP ||= getMod().then(() => new mod.CacheManager()).catch((e) => { cmP = null; throw e; }));
+// The engine itself is created only when the model is loaded.
+function getW() {
+  return (wP ||= (async () => {
+    const m = await getMod(), cacheManager = await getCM();
+    // The engine runs in a blob: worker. Whether a service worker may answer requests from such a worker differs between
+    // browsers, so the .wasm it needs is fetched here (served from the offline cache) and handed over as a blob: URL.
+    const compat = !engineFast(), wasm = compat ? m.engine.compat.wasm : m.engine.wasm;
+    const r = await fetch(abs(wasm)); if (!r.ok) throw new Error('Could not read engine file ' + wasm + ' (' + r.status + ')');
+    if (wasmBlobUrl) URL.revokeObjectURL(wasmBlobUrl);
+    const wasmUrl = wasmBlobUrl = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'application/wasm' }));
+    W = new mod.Wllama({ default: compat ? abs(m.engine.wasm) : wasmUrl }, { allowOffline: true, logger: mod.LoggerWithoutDebug, cacheManager });
+    W.setCompat({ wasm: compat ? wasmUrl : abs(m.engine.compat.wasm), worker: abs(m.engine.compat.worker) });
+    return W;
+  })().catch((e) => { wP = null; throw e; }));
 }
 // Fetch every engine file while online so the service worker keeps them for offline use.
 async function warmEngine() {
   const m = await manifest(); if (!m?.engine?.ok) return;
   for (const f of m.engine.files) { const r = await fetch(abs(f)); if (!r.ok) throw new Error('Could not fetch engine file ' + f); await r.arrayBuffer(); }
 }
-async function resetEngine() { try { gen?.abort(); } catch {} try { await W?.exit?.(); } catch {} W = null; loaded = false; }
+async function resetEngine() { try { gen?.abort(); } catch {} try { await W?.exit?.(); } catch {} W = null; wP = null; loaded = false; if (wasmBlobUrl) { URL.revokeObjectURL(wasmBlobUrl); wasmBlobUrl = null; } }
 
-async function entry() { const w = await getW(), cm = w.cacheManager, name = await cm.getNameFromURL(MODEL.url); return (await cm.list()).find((x) => x.name === name); }
+async function entry() { const cm = await getCM(), name = await cm.getNameFromURL(MODEL.url); return (await cm.list()).find((x) => x.name === name); }
 
 // ---- status ----
 export async function refresh() {
@@ -85,11 +93,11 @@ export async function refresh() {
 
 // SHA-256 of the stored file, compared to the published checksum. A mismatch deletes the file.
 async function verify(signal) {
-  const w = await getW(), blob = await w.cacheManager.open(MODEL.url);
+  const cm = await getCM(), blob = await cm.open(MODEL.url);
   if (!blob || blob.size !== MODEL.bytes) throw new Error(`The model file is incomplete (${blob ? blob.size : 0} of ${MODEL.bytes} bytes). Delete it and download again.`);
   set({ state: 'verifying', progress: { phase: 'verify', loaded: 0, total: blob.size } }); let last = 0;
   const sha = await sha256Blob(blob, (l, t) => { const n = performance.now(); if (n - last > 200 || l >= t) { last = n; set({ progress: { phase: 'verify', loaded: l, total: t } }); } }, { signal });
-  if (sha !== MODEL.sha256) { ls((s) => s.removeItem(VERIFIED)); await w.cacheManager.delete(MODEL.url); throw new Error(`Checksum mismatch: the downloaded file is damaged or not the expected model (got ${sha.slice(0, 12)}…). It was deleted. Please download again.`); }
+  if (sha !== MODEL.sha256) { ls((s) => s.removeItem(VERIFIED)); await cm.delete(MODEL.url); throw new Error(`Checksum mismatch: the downloaded file is damaged or not the expected model (got ${sha.slice(0, 12)}…). It was deleted. Please download again.`); }
   ls((s) => s.setItem(VERIFIED, JSON.stringify({ sha256: sha, bytes: blob.size, at: Date.now() })));
   set({ info: { ...ai.info, verified: true, sha256: sha } });
 }
@@ -104,14 +112,14 @@ export async function download() {
     const est = await navigator.storage?.estimate?.();
     if (est?.quota && est.quota - est.usage < MODEL.bytes * 1.2) throw new Error(`Not enough free storage on this device for the model (needs about ${Math.round(MODEL.bytes * 1.2 / 1e6)} MB, ${Math.round((est.quota - est.usage) / 1e6)} MB available).`);
     navigator.storage?.persist?.().catch(() => {});
-    const w = await getW(); await warmEngine();
-    try { await w.cacheManager.delete(MODEL.url); } catch {}
+    const cm = await getCM(); await warmEngine();
+    try { await cm.delete(MODEL.url); } catch {}
     ls((s) => s.removeItem(VERIFIED)); let last = 0;
-    await w.cacheManager.download(MODEL.url, { signal: ctl.signal, progressCallback: ({ loaded: l, total: t }) => { const n = performance.now(); if (n - last > 250 || l >= t) { last = n; set({ progress: { phase: 'download', loaded: l, total: t || MODEL.bytes } }); } } });
+    await cm.download(MODEL.url, { signal: ctl.signal, progressCallback: ({ loaded: l, total: t }) => { const n = performance.now(); if (n - last > 250 || l >= t) { last = n; set({ progress: { phase: 'download', loaded: l, total: t || MODEL.bytes } }); } } });
     await verify(ctl.signal);
     ai.state = 'unknown'; await refresh();
   } catch (e) {
-    const cancelled = ctl?.signal.aborted; try { const w = await getW(); await w.cacheManager.delete(MODEL.url); } catch {}
+    const cancelled = ctl?.signal.aborted; try { await (await getCM()).delete(MODEL.url); } catch {}
     ls((s) => s.removeItem(VERIFIED)); ai.state = 'unknown'; await refresh(); set({ error: cancelled ? 'Download cancelled. Nothing was kept.' : friendly(e) });
   } finally { try { lock?.release?.(); } catch {} ctl = null; set({ progress: null }); }
 }
@@ -126,7 +134,7 @@ export async function load({ gpu = false } = {}) {
     set({ state: 'loading', progress: null });
     ls((s) => s.setItem(FLAG, String(Date.now())));
     const w = await getW(), cfg = { n_ctx: 2048, n_batch: 512 }; if (!gpu) cfg.n_gpu_layers = 0;
-    const blob = await w.cacheManager.open(MODEL.url); if (!blob) throw new Error('The model file disappeared from storage. Download it again.');
+    const blob = await (await getCM()).open(MODEL.url); if (!blob) throw new Error('The model file disappeared from storage. Download it again.');
     await w.loadModel([blob], cfg); // straight from local storage: never touches the network
     const loadMs = Math.round(performance.now() - t0), meta = w.getModelMetadata?.()?.meta || {};
     const t1 = performance.now(), r = await w.createChatCompletion({ messages: [{ role: 'user', content: 'Reply with exactly one short friendly greeting.' }], max_tokens: 16, temperature: 0 });
@@ -139,7 +147,7 @@ export async function load({ gpu = false } = {}) {
   } finally { ctl = null; }
 }
 export async function unload() { await resetEngine(); set({ state: 'unknown', busy: false }); await refresh(); }
-export async function remove() { await resetEngine(); ls((s) => s.removeItem(VERIFIED)); try { const w = await getW(); await w.cacheManager.delete(MODEL.url); } catch (e) { set({ error: friendly(e) }); } set({ state: 'unknown', info: {} }); await refresh(); }
+export async function remove() { await resetEngine(); ls((s) => s.removeItem(VERIFIED)); try { await (await getCM()).delete(MODEL.url); } catch (e) { set({ error: friendly(e) }); } set({ state: 'unknown', info: {} }); await refresh(); }
 export const ackCrash = () => { ls((s) => s.removeItem(FLAG)); set({ crashed: false }); };
 
 // ---- asking ----
