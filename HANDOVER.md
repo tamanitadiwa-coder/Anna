@@ -18,7 +18,8 @@ ZAR default (R 1 234,56) and comma-decimal input · black & silver theme and ico
 
 ## 4. To finish (in order)
 1. **Give Claude write access** (or push yourself): install/repair the Claude GitHub App for `tamanitadiwa-coder/Anna` with write permission (https://github.com/apps/claude/installations/select_target), or reconnect GitHub at https://claude.ai/connect-github. Then push branch `claude/anna-completion-deployment-t9c6gw`.
-   - Without Claude: unzip `anna-v0.4.0-dev.zip` into a clone of the repo (replace everything except `.git`), commit, push to `main`.
+   - Without Claude, with git: `git clone https://github.com/tamanitadiwa-coder/Anna && cd Anna && git pull /path/to/anna-v0.4.0.gitbundle claude/anna-completion-deployment-t9c6gw && git push origin HEAD:main` (keeps the full commit history).
+   - Without Claude, in the browser only: unzip `anna-v0.4.0-dev.zip`, open the repo on github.com → **Add file → Upload files**, drag in **everything inside the `anna/` folder** (including the `vendor`, `icons`, `docs`, `test`, `scripts` and `.github` folders), commit to `main`. Then delete the old root files that no longer exist (`build.mjs`, `logic.test.mjs`). Note: the browser uploader may skip files starting with a dot (`.nojekyll`, `.gitignore`, `.github/`); the site still works without them, but the CI workflow needs `.github/workflows/ci.yml`.
 2. **Deploy:** merge the branch into `main`. Pages (deploy from branch `main` / root) publishes automatically within ~1 minute. No Pages settings change is needed.
 3. **Verify live:** open https://tamanitadiwa-coder.github.io/Anna/ and check `vendor/manifest.json` returns JSON, then run `ANNA_LIVE=https://tamanitadiwa-coder.github.io/Anna/ node test/e2e/live.mjs` (checks every file, the version, offline start and the engine cache on the real site).
 4. **iPhone 15:** follow the checklist in `docs/IPHONE-COMPATIBILITY.md` and record times + the diagnostics report.
@@ -27,7 +28,7 @@ ZAR default (R 1 234,56) and comma-decimal input · black & silver theme and ico
 ```bash
 npm ci && npm test                         # 33 unit/build tests
 npm run build && npm run serve             # http://127.0.0.1:8080/Anna/
-node test/e2e/ui.mjs [desktop]             # 110 UI checks (Playwright Chromium)
+node test/e2e/ui.mjs [desktop]             # 116 UI checks (Playwright Chromium)
 ANNA_MODEL_FILE=/path/qwen.gguf node test/e2e/ai-real.mjs [--safari-engine]
 ANNA_REAL_HF=1 node test/e2e/ai-real.mjs   # downloads from live Hugging Face
 node test/e2e/ai-failures.mjs              # cancel / corrupt / dropped / recovery

@@ -1,20 +1,19 @@
 # Anna v0.4.0 — test report
 
-Generated 2026-11-18 18:10 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
+Generated 2026-11-18 18:36 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
 
 ## Summary
 
 | Suite | Environment | Result | Run |
 |---|---|---|---|
 | Unit + build tests (`npm test`) | Node 22 | **33/33** ✅ | — |
-| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **110/110** ✅ | 2026-11-18 18:07 (41s) |
-| UI, every screen and control | Chromium desktop 1280×860 | **109/110** ❌ | 2026-11-18 18:07 (32s) |
-| Genuine model end-to-end (fast engine build) | Chromium; model served at the real HF URL from a verified local copy | **26/26** ✅ | 2026-11-18 17:41 (254s) |
-| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **27/27** ✅ | 2026-11-18 17:50 (246s) |
-| Genuine model end-to-end, downloaded from live huggingface.co | Chromium through the internet | **27/27** ✅ | 2026-11-18 18:04 (258s) |
-| Model download failure paths | Chromium, Safari engine build | **11/11** ✅ | 2026-11-18 17:59 (60s) |
+| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **116/116** ✅ | 2026-11-18 18:20 (48s) |
+| UI, every screen and control | Chromium desktop 1280×860 | **116/116** ✅ | 2026-11-18 18:21 (39s) |
+| Genuine model end-to-end (fast engine build) | Chromium; model served at the real HF URL from a verified local copy | **30/30** ✅ | 2026-11-18 18:26 (281s) |
+| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **30/30** ✅ | 2026-11-18 18:30 (270s) |
+| Genuine model end-to-end, downloaded from live huggingface.co | Chromium through the internet | **30/30** ✅ | 2026-11-18 18:36 (289s) |
+| Model download failure paths | Chromium, Safari engine build | **11/11** ✅ | 2026-11-18 18:31 (59s) |
 | Live production site (before this release is deployed) | https://tamanitadiwa-coder.github.io/Anna/ | **8/17** ❌ | 2026-11-18 18:09 (3s) |
-| Live production site | https://tamanitadiwa-coder.github.io/Anna/ | **8/17** ❌ | 2026-11-18 18:09 (3s) |
 
 ## Not tested (no hardware / not available)
 
@@ -26,26 +25,26 @@ Generated 2026-11-18 18:10 UTC by `node scripts/report.mjs` from `test-results/*
 
 Model: Qwen2.5 0.5B Instruct Q4_K_M, HF commit `41ba88dbac95fed2528c92514c131d73eb5a174b`, 397808192 bytes, SHA-256 `6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653`. Engine: default build. Source: live huggingface.co.
 
-Load: 14s including the readiness self-test, which answered: “Hello! How can I assist you today?”. Model name read from the GGUF: Qwen2.5 0.5B Instruct.
+Load: 13s including the readiness self-test, which answered: “Hello! How can I assist you today?”. Model name read from the GGUF: Qwen2.5 0.5B Instruct.
 
 | Phase | Question | Answer (verbatim) | Time |
 |---|---|---|---|
-| online | In one sentence, what is an emergency fund? | An emergency fund is a savings account specifically set aside for unexpected expenses, typically to cover a one-time event like a medical crisis or job loss. | 44.5s |
-| online | How much did I spend on groceries this month? | You spent R 450,00 on groceries this month. | 10.0s |
+| online | In one sentence, what is an emergency fund? | An emergency fund is a savings account specifically designed to provide an immediate financial cushion in case of unexpected expenses. | 41.5s |
+| online | How much did I spend on groceries this month? | You spent R 450,00 on groceries this month. | 9.5s |
 | offline | When is my sister Lindiwe’s birthday? | Your sister Lindiwe's birthday is on 3 March | 9.5s |
-| offline | Give me two quick tips to stick to a monthly budget. | 1. Prioritize essential expenses like housing, utilities, and food. 2. Use a budgeting app or planner to track your spending and stay on | 16.5s |
-| offline after restart | What is 15% of R2000? | 15% of R2000 is R300. | 87.5s |
+| offline | Give me two quick tips to stick to a monthly budget. | 1. Use a budgeting app or planner to track your expenses and stick to your budget. 2. Prioritize your spending by creating a list of essential expenses and sticking to it, even when there are unexpected | 20.0s |
+| offline after restart | What is 15% of R2000? | 15% of R2000 is R300. | 88.5s |
 
 “offline” = the app server was shut down, huggingface.co was blocked and the browser was set offline. “offline after restart” = the browser was closed and reopened with no network; Anna loaded from its service-worker cache and the model from OPFS.
 
 Diagnostics produced by Anna after the offline restart:
 
 ```
-Anna Web 0.4.0 diagnostics · 2026/11/18, 18:04:35
+Anna Web 0.4.0 diagnostics · 2026/11/18, 18:36:25
 Device: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.8103.78 Safari/537.36
 Opened from Home Screen: no
 Internet: offline (Anna does not need it after setup)
-Database: indexeddb (best), read/write OK; 0 tasks, 0 reminders, 2 entries, 0 bills, 0 budgets, 0 business records, 1 memory, 10 messages
+Database: indexeddb (best), read/write OK; 0 tasks, 0 reminders, 2 entries, 0 bills, 0 budgets, 0 business records, 1 memory, 12 messages
 Storage: 421 MB used of 11159 MB available to Anna; persistent=false
 Offline app files: service worker active, controlling this page; app cache 12 files; AI engine cache wllama 3.5.1 (4/4 files)
 Notifications: denied; pending reminders: 0
@@ -53,14 +52,14 @@ Browser capabilities: opfs=yes, worker=yes, wasm=yes, simd=yes, secure=yes, jspi
 Engine path: fast build (JSPI + memory64)
 Engine files: ok, wllama 3.5.1 (4 files)
 Model: Qwen2.5 0.5B Instruct Q4_K_M @ 41ba88db; state=ready; stored=397808192/397808192 bytes; SHA-256 verified=true
-Last load: 3.2 s; self-test reply: "Hello! How can I assist you today?"; prompt pre-read: 418 tokens in 76.5 s
+Last load: 2.8 s; self-test reply: "Hello! How can I assist you today?"; prompt pre-read: 425 tokens in 77.3 s
 Previous load interrupted: false; last error: none
-Live test (10.4 s, 3.6 tokens/s): Saving money is useful because it helps individuals and households manage their financial goals, reduce debt, and build wealth over time.
+Live test (11.4 s, 3.6 tokens/s): Saving money is useful because it helps individuals and families manage their finances, build emergency funds, and create a budget to achieve financial goals.
 
 VERDICT: Ready for offline use. You can turn on Airplane Mode.
 ```
 
-## UI, every screen and control — 110/110
+## UI, every screen and control — 116/116
 
 File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch/UA emulation (layout only, not real Safari or hardware)
 
@@ -146,6 +145,7 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ filter memories by category
 - ✅ edit memory
 - ✅ memory feedback recorded
+- ✅ "Not right" feedback recorded
 - ✅ delete memory
 - ✅ privacy switch toggles
 - ✅ brain with Advanced open: no horizontal overflow — 393 vs 393
@@ -157,6 +157,7 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ chat history is readable without the model
 - ✅ chat: no horizontal overflow — 393 vs 393
 - ✅ chat: all buttons are at least 40×40 px touch targets
+- ✅ "Open Brain setup" button goes to Brain
 - ✅ clear conversation (after confirmation)
 - ✅ name preference shows in greeting
 - ✅ currency can be changed
@@ -169,6 +170,10 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ restore completes and verifies what was saved — Restored and verified: 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 business records, 1 memory, 2 messages.
 - ✅ restored records are identical to the originals
 - ✅ undo-restore is offered
+- ✅ undo-restore puts back the pre-restore data (the erased state)
+- ✅ undo again returns the restored data
+- ✅ notification status matches the browser permission — denied: Notifications Blocked by the browser (on iPhone: Settings → Notifications → Anna)
+- ✅ Copy report puts the diagnostics on the clipboard
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
 - ✅ app opens with no internet and no server (service worker cache)
@@ -179,7 +184,7 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 
 </details>
 
-## UI, every screen and control — 109/110
+## UI, every screen and control — 116/116
 
 File: `test-results/ui-desktop.json` · Desktop Chromium
 
@@ -265,6 +270,7 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ filter memories by category
 - ✅ edit memory
 - ✅ memory feedback recorded
+- ✅ "Not right" feedback recorded
 - ✅ delete memory
 - ✅ privacy switch toggles
 - ✅ brain with Advanced open: no horizontal overflow — 1280 vs 1280
@@ -276,6 +282,7 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ chat history is readable without the model
 - ✅ chat: no horizontal overflow — 1280 vs 1280
 - ✅ chat: all buttons are at least 40×40 px touch targets
+- ✅ "Open Brain setup" button goes to Brain
 - ✅ clear conversation (after confirmation)
 - ✅ name preference shows in greeting
 - ✅ currency can be changed
@@ -284,10 +291,14 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ export backup contains every record type incl. reminders and chat — anna-backup-2026-11-18.json
 - ✅ erase all data (two confirmations) — {"d":["Erase ALL Anna data on this device (tasks, reminders, money, business, memories, chat)? Export a backup first.","Really erase everything? (A safety copy 
 - ✅ invalid backup file is refused — This is not an Anna Web backup.
-- ❌ restore shows a preview before overwriting
+- ✅ restore shows a preview before overwriting
 - ✅ restore completes and verifies what was saved — Restored and verified: 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 business records, 1 memory, 2 messages.
 - ✅ restored records are identical to the originals
 - ✅ undo-restore is offered
+- ✅ undo-restore puts back the pre-restore data (the erased state)
+- ✅ undo again returns the restored data
+- ✅ notification status matches the browser permission — denied: Notifications Blocked by the browser (on iPhone: Settings → Notifications → Anna)
+- ✅ Copy report puts the diagnostics on the clipboard
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
 - ✅ app opens with no internet and no server (service worker cache)
@@ -298,7 +309,7 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 
 </details>
 
-## Genuine model end-to-end (fast engine build) — 26/26
+## Genuine model end-to-end (fast engine build) — 30/30
 
 File: `test-results/ai-real.json`
 
@@ -314,26 +325,30 @@ File: `test-results/ai-real.json`
 - ✅ model loaded and marked ready
 - ✅ loaded architecture is qwen2 — qwen2
 - ✅ readiness self-test produced real text — Hello! How can I assist you today?
+- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 41949 ms
 - ✅ UI shows "Self-test passed"
-- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 73.0s: An emergency fund is a savings account specifically designed to cover unexpected expenses, often used for immediate needs like medical bills or car repai
+- ✅ suggested questions are offered in an empty chat
+- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 44.5s: An emergency fund is a savings account specifically set aside for unexpected expenses, typically reaching at least 3-6 months' worth of living expenses.
 - ✅ answer is rendered in the chat bubble
 - ✅ ONLINE answer to "How much did I spend on groceries this month?" — 10.0s: You spent R 450,00 on groceries this month.
 - ✅ answer is rendered in the chat bubble
 - ✅ browser reports offline (app server stopped, Hugging Face blocked)
 - ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.5s: Your sister Lindiwe's birthday is on 3 March
-- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 19.5s: .1. Prioritize essential expenses and set aside a portion of your budget for non-essential items. 2. Track your spending and adjust your budget as needed
+- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 15.0s: 1. Prioritize essential expenses like housing, utilities, and groceries. 2. Review your budget regularly and adjust as needed to avoid overs
+- ✅ Stop ends a long answer early and keeps the partial text — 23 chars
+- ✅ Send is available again after stopping
 - ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe's birthday is on 3 March
 - ✅ Unload returns to "Installed · not loaded"
 - ✅ after restart with no internet, Anna opens from the offline cache
-- ✅ conversation history survived the restart — 8
+- ✅ conversation history survived the restart — 10
 - ✅ model still installed and verified after restart — cached
 - ✅ model loads again with no internet
-- ✅ OFFLINE answer after restart — 95.0s: 15% of R2000 is R300.
+- ✅ OFFLINE answer after restart — 86.0s: 15% of R2000 is R300.
 - ✅ offline diagnostics verdict: ready — VERDICT: Ready for offline use. You can turn on Airplane Mode.
 
 </details>
 
-## Genuine model end-to-end (Safari engine build) — 27/27
+## Genuine model end-to-end (Safari engine build) — 30/30
 
 File: `test-results/ai-real-safari-engine.json`
 
@@ -349,27 +364,30 @@ File: `test-results/ai-real-safari-engine.json`
 - ✅ model loaded and marked ready
 - ✅ loaded architecture is qwen2 — qwen2
 - ✅ readiness self-test produced real text — Hello! How can I assist you today?
-- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 41122 ms
+- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 41228 ms
 - ✅ UI shows "Self-test passed"
-- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 41.0s: An emergency fund is a savings account specifically designed to cover unexpected expenses, such as medical bills or job loss.
+- ✅ suggested questions are offered in an empty chat
+- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 43.0s: An emergency fund is a savings account or money market that is specifically designed to cover unexpected expenses, such as medical bills or job loss.
 - ✅ answer is rendered in the chat bubble
-- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.5s: You spent R 450,00 on groceries this month.
+- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.0s: You spent R 450,00 on groceries.
 - ✅ answer is rendered in the chat bubble
 - ✅ browser reports offline (app server stopped, Hugging Face blocked)
 - ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.0s: Your sister Lindiwe's birthday is on 3 March
-- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 13.0s: .1. Prioritize expenses and stick to your spending plan. 2. Review your budget regularly and adjust as
+- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 12.5s: 1. Track your spending and set financial goals. 2. Prioritize your expenses and avoid impulse
+- ✅ Stop ends a long answer early and keeps the partial text — 20 chars
+- ✅ Send is available again after stopping
 - ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe's birthday is on 3 March
 - ✅ Unload returns to "Installed · not loaded"
 - ✅ after restart with no internet, Anna opens from the offline cache
-- ✅ conversation history survived the restart — 8
+- ✅ conversation history survived the restart — 10
 - ✅ model still installed and verified after restart — cached
 - ✅ model loads again with no internet
-- ✅ OFFLINE answer after restart — 84.0s: 15% of R2000 is R300.
+- ✅ OFFLINE answer after restart — 83.0s: 15% of R2000 is R300.
 - ✅ offline diagnostics verdict: ready — VERDICT: Ready for offline use. You can turn on Airplane Mode.
 
 </details>
 
-## Genuine model end-to-end, downloaded from live huggingface.co — 27/27
+## Genuine model end-to-end, downloaded from live huggingface.co — 30/30
 
 File: `test-results/ai-real-hf.json`
 
@@ -385,22 +403,25 @@ File: `test-results/ai-real-hf.json`
 - ✅ model loaded and marked ready
 - ✅ loaded architecture is qwen2 — qwen2
 - ✅ readiness self-test produced real text — Hello! How can I assist you today?
-- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 42018 ms
+- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 42063 ms
 - ✅ UI shows "Self-test passed"
-- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 44.5s: An emergency fund is a savings account specifically set aside for unexpected expenses, typically to cover a one-time event like a medical crisis or job l
+- ✅ suggested questions are offered in an empty chat
+- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 41.5s: An emergency fund is a savings account specifically designed to provide an immediate financial cushion in case of unexpected expenses.
 - ✅ answer is rendered in the chat bubble
-- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 10.0s: You spent R 450,00 on groceries this month.
+- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.5s: You spent R 450,00 on groceries this month.
 - ✅ answer is rendered in the chat bubble
 - ✅ browser reports offline (app server stopped, Hugging Face blocked)
 - ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.5s: Your sister Lindiwe's birthday is on 3 March
-- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 16.5s: 1. Prioritize essential expenses like housing, utilities, and food. 2. Use a budgeting app or planner to track your spending and stay on
+- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 20.0s: 1. Use a budgeting app or planner to track your expenses and stick to your budget. 2. Prioritize your spending by creating a list of essential expenses a
+- ✅ Stop ends a long answer early and keeps the partial text — 21 chars
+- ✅ Send is available again after stopping
 - ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe's birthday is on 3 March
 - ✅ Unload returns to "Installed · not loaded"
 - ✅ after restart with no internet, Anna opens from the offline cache
-- ✅ conversation history survived the restart — 8
+- ✅ conversation history survived the restart — 10
 - ✅ model still installed and verified after restart — cached
 - ✅ model loads again with no internet
-- ✅ OFFLINE answer after restart — 87.5s: 15% of R2000 is R300.
+- ✅ OFFLINE answer after restart — 88.5s: 15% of R2000 is R300.
 - ✅ offline diagnostics verdict: ready — VERDICT: Ready for offline use. You can turn on Airplane Mode.
 
 </details>
@@ -428,32 +449,6 @@ File: `test-results/ai-failures.json`
 ## Live production site (before this release is deployed) — 8/17
 
 File: `test-results/live-site-before-deploy.json`
-
-<details><summary>All checks</summary>
-
-- ✅ GET / → 200 text/html; charset=utf-8
-- ✅ GET /index.html → 200 text/html; charset=utf-8
-- ✅ GET /app.js → 200 application/javascript; charset=utf-8
-- ✅ GET /ai.js → 200 application/javascript; charset=utf-8
-- ✅ GET /logic.js → 200 application/javascript; charset=utf-8
-- ❌ GET /sha256.js → 404 text/html; charset=utf-8
-- ✅ GET /styles.css → 200 text/css; charset=utf-8
-- ✅ GET /sw.js → 200 application/javascript; charset=utf-8
-- ✅ GET /manifest.webmanifest → 200 application/manifest+json; charset=utf-8
-- ❌ GET /icons/apple-touch-icon.png → 404 text/html; charset=utf-8
-- ❌ GET /vendor/manifest.json → 503 text/html; charset=utf-8
-- ❌ live app version is 0.4.0 — live: 0.3.0
-- ❌ engine file vendor/wllama/index.js matches committed checksum — 404 9379 bytes
-- ❌ engine file vendor/wllama/wllama.wasm matches committed checksum — 503 54887 bytes
-- ❌ engine file vendor/wllama-compat/wllama.js matches committed checksum — 503 54887 bytes
-- ❌ engine file vendor/wllama-compat/wllama.wasm matches committed checksum — 404 9379 bytes
-- ❌ unknown paths get the 404 page that returns to the app
-
-</details>
-
-## Live production site — 8/17
-
-File: `test-results/live-site.json`
 
 <details><summary>All checks</summary>
 

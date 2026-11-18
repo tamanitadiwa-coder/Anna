@@ -6,9 +6,9 @@
 
 | Level | Status | Evidence |
 |---|---|---|
-| Desktop browser (Chromium) | **Tested** | 110/110 UI checks; real model end-to-end 27/27 (incl. live Hugging Face download); failure paths 11/11 |
-| Safari code path of the AI engine | **Tested in Chromium** | wllama's *compat* build is the one Safari uses (Safari lacks JSPI). Tests hide JSPI so wllama takes exactly that path: real model loads and answers online, offline and after restart (27/27). |
-| Mobile layout (iPhone 15 viewport 393×852, touch, iOS user agent) | **Emulated in Chromium** | 110/110 UI checks incl. no horizontal overflow, all buttons ≥ 44 px (40 px minimum enforced in tests), switches not overlapped (the old GPU-toggle overlap is fixed) |
+| Desktop browser (Chromium) | **Tested** | 116/116 UI checks; real model end-to-end 30/30 (incl. live Hugging Face download); failure paths 11/11 |
+| Safari code path of the AI engine | **Tested in Chromium** | wllama's *compat* build is the one Safari uses (Safari lacks JSPI). Tests hide JSPI so wllama takes exactly that path: real model loads and answers online, offline and after restart (30/30). |
+| Mobile layout (iPhone 15 viewport 393×852, touch, iOS user agent) | **Emulated in Chromium** | 116/116 UI checks incl. no horizontal overflow, all buttons ≥ 44 px (40 px minimum enforced in tests), switches not overlapped (the old GPU-toggle overlap is fixed) |
 | WebKit engine | **Not tested** | Playwright WebKit was not available in the environment |
 | Real iPhone 15 / Safari / Home Screen | **Not tested** | No hardware |
 

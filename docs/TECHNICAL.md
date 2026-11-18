@@ -50,7 +50,7 @@ GitHub Pages, base path `/Anna/`. All paths are relative. The repository root is
 
 ### Tests
 - `test/*.test.mjs` (node:test): logic, AI prompt/privacy, SHA-256, build/version/paths.
-- `test/e2e/ui.mjs`: 110 checks through the real UI (iPhone 15 emulation or desktop), including restart persistence and offline start.
+- `test/e2e/ui.mjs`: 116 checks through the real UI (iPhone 15 emulation or desktop), including restart persistence and offline start.
 - `test/e2e/ai-real.mjs`: the genuine model end-to-end, online → offline → browser restart offline. `--safari-engine` forces wllama's Safari build. `ANNA_REAL_HF=1` downloads from live Hugging Face.
 - `test/e2e/ai-failures.mjs`: cancel, corrupted bytes, dropped connection, offline start, recovery, re-verification, delete.
 Results are written to `test-results/*.json`.
