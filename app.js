@@ -6,7 +6,7 @@ import * as A from './auth.js';
 import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
-export const VERSION = '0.9.0';
+export const VERSION = '0.10.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -26,6 +26,7 @@ async function kvSet(k, v) {
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
 let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
+let pendingEntry = null, entryUndo = {}, BK = null;
 let bizView = 'overview', staffWeek = 0, calcTab = 'basic', CALC = {}, BD = null, AFF = { amount: '', what: '' };
 let pendingReminder = null, reminderPrefill = null, lastURL = '';
 let LIFE = LF.emptyLife(), brainView = 'journal', jQ = '', jTag = '', pendingRemember = null, checkinShown = false;
@@ -141,19 +142,20 @@ const screens = {
       `<div class="adds">${addBtn('task', '＋ Task')}${addBtn('reminder', '＋ Reminder', 'soft')}</div>` + body;
   },
   money() {
-    const m = L.monthSummary(S), bs = L.budgetStatus(S), bills = S.bills.filter((b) => !b.paid).sort((a, b) => a.due_at - b.due_at), paid = S.bills.filter((b) => b.paid).sort((a, b) => (b.paid_at || 0) - (a.paid_at || 0)).slice(0, 5);
+    const m = L.monthSummary(S), bs = L.budgetStatus(S), bills = S.bills.filter((b) => !b.paid).sort((a, b) => (a.priority || 2) - (b.priority || 2) || a.due_at - b.due_at), paid = S.bills.filter((b) => b.paid).sort((a, b) => (b.paid_at || 0) - (a.paid_at || 0)).slice(0, 5);
     let parts = L.spendingByCategory(S).map(([k, v], i) => ({ label: k, value: v, color: COL[i % COL.length] }));
     if (parts.length > 5) { const rest = parts.slice(5).reduce((n, p) => n + p.value, 0); parts = [...parts.slice(0, 5), { label: 'Other', value: rest, color: '#3A3D43' }]; }
     const mo = six().map((x) => { const s = L.monthSummary(S, x.t); return { l: x.l, a: s.income, b: s.expense }; });
     const tx = [...S.tx].sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 40);
     return top() + title('Finances', 'Money', 'Calm, clear and entirely private') +
       `<div class="hero"><div class="k">Net this month</div><div class="big">${money(m.net)}</div><div class="pills"><div class="pill"><span>Income</span><b>${money(m.income)}</b></div><div class="pill"><span>Expenses</span><b>${money(m.expense)}</b></div></div></div>
+      <div class="card row" style="gap:12px"><div class="grow"><b>Books Day · the 25th</b><div class="mute">${booksStateGet().closed?.includes(M.booksMonth()) ? 'This month is closed.' : 'Close the month with ANNA, one question at a time.'}</div></div><button class="btn sm" data-act="books-remind">Remind me</button></div>
       <div class="adds"><button class="btn" data-act="open" data-id="mbudget">Monthly calculator</button><button class="btn soft" data-act="open" data-id="calc">Calculator</button><button class="btn sage" data-act="open" data-id="afford">Can I afford it?</button></div>
       <div class="adds">${addBtn('tx', '＋ Entry')}${addBtn('bill', '＋ Bill', 'soft')}${addBtn('budget', '＋ Budget', 'sage')}</div>
       ${sh('Spending breakdown')}<div class="card">${parts.length ? `<div class="donutw">${donut(parts)}<div class="leg">${parts.map((p) => `<div><i style="background:${p.color}"></i>${esc(p.label)}<span>${money(p.value)}</span></div>`).join('')}</div></div>` : empty('No spending recorded this month.')}</div>
       ${sh('Cash flow')}<div class="card">${bars(mo)}<div class="key"><span><i style="background:#D9DCE1"></i>Income</span><span><i style="background:#5C6169"></i>Spent</span></div></div>
       ${sh('Budgets')}${bs.map((b) => `<div class="card"><div class="row"><b class="grow tap" data-act="edit" data-k="budget" data-id="${b.id}">${esc(b.category)}</b><span class="${b.over ? 'over' : 'mute'}">${money(b.spent)} of ${money(b.limit_cents)}</span>${editBtn('budget', b.id)}${delBtn('budget', b.id)}</div><div class="bar ${b.over ? 'over' : ''}"><i style="width:${Math.min(100, Math.round((b.spent / b.limit_cents) * 100))}%"></i></div><div class="mute" style="margin-top:6px">${b.over ? `${money(-b.left)} over budget` : `${money(b.left)} left this month`}</div></div>`).join('') || `<div class="card">${empty('Set a monthly budget for a category to keep spending gentle.')}</div>`}
-      ${sh('Bills to pay')}<div class="card">${bills.map((b) => `<div class="item"><div class="grow tap" data-act="edit" data-k="bill" data-id="${b.id}"><b>${esc(b.name)}</b><div class="mute">${b.due_at < SOD ? '<span class="over">Overdue</span> · ' : ''}Due ${dstr(b.due_at)}${b.repeat_monthly ? ' · monthly' : ''}${b.last_paid_at ? ' · last paid ' + dstr(b.last_paid_at) : ''}</div></div><b>${money(b.amount_cents)}</b><button class="btn sage sm" data-act="pay" data-id="${b.id}">Paid</button>${delBtn('bill', b.id)}</div>`).join('') || empty('No unpaid bills.')}</div>
+      ${sh('Bills to pay')}<div class="card">${bills.map((b) => `<div class="item"><div class="grow tap" data-act="edit" data-k="bill" data-id="${b.id}"><b>${esc(b.name)}</b> <span class="chip ${(b.priority || 2) === 1 ? 'gold' : ''}">P${b.priority || 2}</span><div class="mute">${b.due_at < SOD ? '<span class="over">Overdue</span> · ' : ''}Due ${dstr(b.due_at)} · unpaid${b.repeat_monthly ? ' · monthly' : ''}${b.last_paid_at ? ' · last paid ' + dstr(b.last_paid_at) : ''}</div></div><b>${money(b.amount_cents)}</b><button class="btn sage sm" data-act="pay" data-id="${b.id}">Paid</button>${delBtn('bill', b.id)}</div>`).join('') || empty('No unpaid bills.')}</div>
       ${paid.length ? sh('Recently paid') + `<div class="card">${paid.map((b) => `<div class="item"><div class="grow"><b>${esc(b.name)}</b><div class="mute">Paid ${dstr(b.paid_at)}</div></div><b>${money(b.amount_cents)}</b><button class="btn sage sm" data-act="unpay" data-id="${b.id}">Undo</button>${delBtn('bill', b.id)}</div>`).join('')}</div>` : ''}
       ${sh('Transactions')}<div class="card">${tx.map((t) => `<div class="item"><div class="dot ${t.kind === 'income' ? '' : 'g'}">${ic('money')}</div><div class="grow tap" data-act="edit" data-k="tx" data-id="${t.id}"><b>${esc(t.category)}</b><div class="mute">${dstr(t.occurred_at)}${t.note ? ' · ' + esc(t.note) : ''}</div></div><b class="${t.kind === 'income' ? 'pos' : ''}">${t.kind === 'income' ? '+' : '−'}${money(t.amount_cents)}</b>${delBtn('tx', t.id)}</div>`).join('') || empty('No entries yet. Tap ＋ Entry to record income or an expense.')}</div>`;
   },
@@ -256,8 +258,9 @@ function engineHTML() {
 }
 const accessHTML = () => `<div class="card"><h2>What Anna may read</h2><div class="mute" style="margin:4px 0 4px">Only switched-on categories are shown to the local model, and nothing ever leaves this device. Notes and customer names are never included, and Anna can read but never change your data.</div>${AI.ACCESS.map(([k, n]) => sw(k, n)).join('')}<button class="link" data-act="ctx-open">Preview exactly what Anna sees</button></div>`;
 const SUGG = ['What should I focus on today?', 'How am I doing on money this month?', 'Which bills and invoices are unpaid?', 'Give me three tips to save on groceries.'];
+const extraBtns = (m) => (m.undo && entryUndo[m.undo] ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm sage" data-act="ent-undo" data-id="${m.undo}">Undo</button></div>` : '') + (m.books ? `<div class="row wrap" style="margin-top:8px">${m.books.map(([a, n, c]) => `<button class="btn sm ${c || ''}" data-act="${a}">${n}</button>`).join('')}</div>` : '');
 const followBtns = (m) => { const r = m.follow && S.reminders.find((x) => x.id === m.follow); return r && !r.done ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="rem-ios" data-id="${r.id}">iPhone Reminders</button><button class="btn sm sage" data-act="rem-ics" data-id="${r.id}">Add to Calendar</button></div><div class="mute" style="font-size:12px;margin-top:4px">${whereLives(r)}</div>` : ''; };
-const bubble = (m, i) => `<div class="bub ${m.role}${m.error ? ' err' : ''}">${m.error ? esc(m.error) : m.content ? esc(m.content).replace(/\n/g, '<br>') : '<span class="mute typing">Thinking</span>'}${m.follow ? followBtns(m) : ''}${m.at ? `<span class="t">${tstr(m.at)}</span>` : ''}</div>`;
+const bubble = (m, i) => `<div class="bub ${m.role}${m.error ? ' err' : ''}">${m.error ? esc(m.error) : m.content ? esc(m.content).replace(/\n/g, '<br>') : '<span class="mute typing">Thinking</span>'}${m.follow ? followBtns(m) : ''}${extraBtns(m)}${m.at ? `<span class="t">${tstr(m.at)}</span>` : ''}</div>`;
 function chatMain() {
   const a = AI.ai, ready = a.state === 'ready';
   let note = '';
@@ -267,8 +270,9 @@ function chatMain() {
   }
   const sugg = ready && !S.chat.length ? `<div class="empty">Ask about your day, money or business, or anything else.<br>Anna only sees what you allow in Brain.</div>${SUGG.map((q, i) => `<button class="btn sage full" style="margin:6px 0" data-act="chat-suggest" data-id="${i}">${q}</button>`).join('')}` : '';
   const rem = pendingRemember ? `<div class="card" style="margin:4px 0"><div>${pendingRemember.style ? `Want me to remember that you prefer: <b>${esc(LF.STYLES.find(([k]) => k === pendingRemember.style)[1])}</b>?` : `Want me to remember this?<div class="mute" style="margin-top:4px">“${esc(pendingRemember.text.slice(0, 160))}”</div>`}</div><div class="row" style="margin-top:10px"><button class="btn sm" data-act="rem-yes">Yes, remember</button><button class="btn sm sage" data-act="rem-no">No</button></div></div>` : '';
+  const ec = pendingEntry ? `<div class="card" style="margin:4px 0"><div class="row wrap"><button class="btn sm" data-act="ent-save">Save</button><button class="btn sm sage" data-act="ent-edit">Edit</button><button class="btn sm sage" data-act="ent-cancel">Cancel</button></div></div>` : '';
   const rq = pendingReminder?.ts ? `<div class="card" style="margin:4px 0"><div class="row wrap"><button class="btn sm" data-act="rq-save">Save in ANNA</button><button class="btn sm sage" data-act="rq-edit">Change…</button><button class="btn sm sage" data-act="rq-cancel">Cancel</button></div></div>` : '';
-  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}${rq}</div>`;
+  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}${rq}${ec}</div>`;
 }
 function chatPanel() {
   const on = AI.ACCESS.filter(([k]) => S.settings.ai[k]).map(([, n]) => n), busy = AI.ai.busy;
@@ -296,9 +300,11 @@ const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.
 // Tools first (exact answers from code, work without the AI): reminders, clock, dates, public holidays.
 function toolReply(text) {
   if (pendingReminder && !pendingReminder.ts) { const w = TM.parseWhen(text); if (w?.hasDate || w?.hasTime) { pendingReminder = { ...pendingReminder, ts: w.ts, hasTime: w.hasTime, repeat: w.repeat !== 'none' ? w.repeat : pendingReminder.repeat }; return reminderAsk(); } }
+  if (BK) { const r = booksAnswer(text); if (r) return r; }
+  if (/^\s*(start )?books day\s*$/i.test(text)) { BK = { step: 0, month: M.booksMonth() }; setTimeout(() => booksAsk(), 0); return 'Let’s close the month.'; }
   const d = TM.parseReminder(text);
   if (d) { pendingReminder = d; if (!d.title) { pendingReminder = null; return 'What should I remind you about? For example: “Remind me to call Mom tomorrow at 3pm”.'; } if (!d.ts) return `When should I remind you to “${d.title}”? For example: tomorrow at 9am, next Friday, or in 2 hours.`; if (d.ts <= Date.now()) { pendingReminder = { ...d, ts: null }; return 'That time has already passed. When should I remind you instead?'; } return reminderAsk(); }
-  const t = TM.answerTime(text); return t || moneyReply(text) || '';
+  const t = TM.answerTime(text); return t || moneyReply(text) || entryReply(text) || '';
 }
 const reminderAsk = () => { const d = pendingReminder; return `Shall I remind you to “${d.title}” on ${TM.fmtDateTime(d.ts)}${d.repeat && d.repeat !== 'none' ? ', repeating ' + ({ daily: 'every day', weekly: 'every week', monthly: 'every month' }[d.repeat]) : ''}${d.hasTime === false ? ' (I picked 09:00, change it if you like)' : ''}?`; };
 async function sendChat(text, opts) {
@@ -323,7 +329,7 @@ const FORMS = {
   reminder: (r = {}) => { const at = r.at || (() => { const d = new Date(Date.now() + 36e5); d.setMinutes(0, 0, 0); return d.getTime(); })();
     return [r.id ? 'Edit reminder' : 'New reminder', `${fld('Remind me to', `<input name="title" placeholder="e.g. Pay the domestic worker" maxlength="200" required ${val(r.title)}>`)}<div class="two">${fld('Date', `<input name="day" type="date" required ${val(L.tsToDay(at))}>`)}${fld('Time', `<input name="time" type="time" required ${val(L.tsToTime(at))}>`)}</div>${fld('Repeat', `<select name="repeat">${L.REPEATS.map(([k, n]) => opt(k, n, r.repeat || 'none')).join('')}</select>`)}${fld('Notes', `<textarea name="notes" rows="2" placeholder="Optional" maxlength="500">${esc(r.notes || '')}</textarea>`)}`, r.id ? 'Save reminder' : 'Set reminder']; },
   tx: (r = {}) => [r.id ? 'Edit entry' : 'New entry', `<div class="two">${fld('Type', `<select name="kind">${opt('expense', 'Expense', r.kind || 'expense')}${opt('income', 'Income', r.kind)}</select>`)}${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.amount_cents)) : ''}>`)}</div>${fld('Category', `<input name="category" placeholder="e.g. Groceries" maxlength="40" list="cats" ${val(r.category)}>`)}${catList('cats', [...S.tx.map((t) => t.category), ...S.budgets.map((b) => b.category), 'Groceries', 'Transport', 'Salary', 'Rent', 'Electricity', 'Airtime & data', 'Eating out', 'Medical'])}<div class="two">${fld('Date', `<input name="date" type="date" required ${val(L.tsToDay(r.occurred_at || Date.now()))}>`)}${fld('Note', `<input name="note" placeholder="Optional" maxlength="200" ${val(r.note)}>`)}</div>`, r.id ? 'Save entry' : 'Save entry'],
-  bill: (r = {}) => [r.id ? 'Edit bill' : 'New bill', `${fld('Bill', `<input name="name" placeholder="e.g. Rent" maxlength="80" required ${val(r.name)}>`)}<div class="two">${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.amount_cents)) : ''}>`)}${fld('Due date', `<input name="due" type="date" required ${val(L.tsToDay(r.due_at))}>`)}</div><label class="cb"><input type="checkbox" name="monthly" ${r.repeat_monthly ? 'checked' : ''}> Repeats monthly</label>${r.id ? `<label class="cb"><input type="checkbox" name="paid" ${r.paid ? 'checked' : ''}> Paid</label>` : ''}`, r.id ? 'Save bill' : 'Add bill'],
+  bill: (r = {}) => [r.id ? 'Edit bill' : 'New bill', `${fld('Bill', `<input name="name" placeholder="e.g. Rent" maxlength="80" required ${val(r.name)}>`)}<div class="two">${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.amount_cents)) : ''}>`)}${fld('Due date', `<input name="due" type="date" required ${val(L.tsToDay(r.due_at))}>`)}</div>${fld('Priority', `<select name="priority">${opt('1', '1 — must pay first (rent, electricity…)', String(r.priority || 2))}${opt('2', '2 — important', String(r.priority || 2))}${opt('3', '3 — can wait', String(r.priority || 2))}</select>`)}<label class="cb"><input type="checkbox" name="monthly" ${r.repeat_monthly ? 'checked' : ''}> Repeats monthly</label>${r.id ? `<label class="cb"><input type="checkbox" name="paid" ${r.paid ? 'checked' : ''}> Paid</label>` : ''}`, r.id ? 'Save bill' : 'Add bill'],
   budget: (r = {}) => [r.id ? 'Edit budget' : 'Monthly budget', `${fld('Category', `<input name="category" placeholder="e.g. Groceries" maxlength="40" required list="cats" ${val(r.category)}>`)}${catList('cats', S.tx.map((t) => t.category))}${fld(`Monthly limit (${esc(cur())})`, `<input name="limit" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.limit_cents)) : ''}>`)}<div class="mute">Expenses with the same category count towards this budget.</div>`, r.id ? 'Save budget' : 'Set budget'],
   biz: (r = {}) => [r.id ? 'Edit business record' : 'Business record', `<div class="two">${fld('Type', `<select name="kind">${opt('sale', 'Sale', r.kind || 'sale')}${opt('expense', 'Expense', r.kind)}${opt('invoice', 'Invoice', r.kind)}</select>`)}${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.amount_cents)) : ''}>`)}</div>${fld('Description', `<input name="description" placeholder="What was it for?" maxlength="200" required ${val(r.description)}>`)}${fld('Customer / supplier', `<input name="party" placeholder="Optional" maxlength="80" ${val(r.party)}>`)}<div class="two">${fld('Date', `<input name="date" type="date" required ${val(L.tsToDay(r.occurred_at || Date.now()))}>`)}${fld('Invoice status', `<select name="status">${opt('unpaid', 'Unpaid', r.status || 'unpaid')}${opt('paid', 'Paid', r.status)}</select>`)}</div>${fld('Notes', `<textarea name="notes" rows="2" placeholder="Optional" maxlength="500">${esc(r.notes || '')}</textarea>`)}<div class="mute">Invoice status only applies to invoices.</div>`, r.id ? 'Save record' : 'Save record'],
   mem: (r = {}) => [r.id ? 'Edit memory' : 'Remember', `${fld('Memory', `<textarea name="content" rows="3" placeholder="e.g. I do my best work in the morning" maxlength="500" required>${esc(r.content || '')}</textarea>`)}<div class="two">${fld('Confidence', `<select name="status">${opt('confirmed', 'Confirmed', r.status || 'confirmed')}${opt('temporary', 'Temporary', r.status)}${opt('assumption', 'Assumption', r.status)}</select>`)}${fld('Category', `<input name="category" maxlength="40" list="mcats" ${val(r.category || 'General')}>`)}</div>${catList('mcats', [...S.mem.map((m) => m.category), 'General', 'Personal', 'Work', 'Health', 'Family', 'Money'])}<div class="mute">Assumptions are never shown to the AI.</div>`, r.id ? 'Save memory' : 'Remember'],
@@ -333,7 +339,7 @@ FORMS.journal = (r = {}) => [r.id ? 'Edit entry' : 'New journal entry', `<div cl
 FORMS.goal = (r = {}) => [r.id ? 'Edit goal' : 'New goal', `${fld('Goal', `<input name="title" maxlength="120" placeholder="e.g. Walk 30 minutes" required ${val(r.title)}>`)}<div class="two">${fld('Type', `<select name="horizon">${LF.HORIZONS.map(([k, n]) => opt(k, n, r.horizon || 'weekly')).join('')}</select>`)}${fld('Area', `<select name="area">${[['personal', 'Personal'], ['health', 'Health'], ['emotional', 'Emotional'], ['career', 'Career'], ['business', 'Business'], ['financial', 'Financial']].map(([k, n]) => opt(k, n, r.area || 'personal')).join('')}</select>`)}</div><div class="two">${fld('Target (optional)', `<input name="target" inputmode="decimal" placeholder="e.g. 3" ${val(r.target)}>`)}${fld('Unit', `<input name="unit" maxlength="20" placeholder="times, km, R…" ${val(r.unit)}>`)}</div><div class="mute">Daily goals and habits reset each day, weekly ones each Monday, monthly ones on the 1st.</div>`, r.id ? 'Save goal' : 'Add goal'];
 FORMS.glog = () => { const g = LIFE.goals.find((x) => x.id === logGoal); return ['Log progress', `<div class="mute" style="margin:0 4px 8px">${esc(g?.title || '')}</div><div class="two">${fld(`Amount${g?.unit ? ' (' + esc(g.unit) + ')' : ''}`, '<input name="value" inputmode="decimal" value="1" required>')}${fld('Date', `<input name="date" type="date" ${val(LF.todayISO())}>`)}</div>${fld('Note', '<input name="note" maxlength="200" placeholder="Optional">')}`, 'Log it']; };
 let logGoal = null;
-FORMS.person = (r = {}) => [r.id ? 'Edit staff member' : 'New staff member', `${fld('Name', `<input name="name" maxlength="80" required ${val(r.name)}>`)}${fld('Role', `<input name="role" maxlength="80" placeholder="Optional" ${val(r.role)}>`)}<div class="two">${fld(`Hourly rate (${esc(M.symbolOf(curCode()))})`, `<input name="rate" inputmode="decimal" placeholder="e.g. 30,23" ${r.rate_cents ? val((r.rate_cents / 100).toFixed(2)) : ''}>`)}${fld('Phone', `<input name="phone" inputmode="tel" maxlength="30" placeholder="Optional" ${val(r.phone)}>`)}</div><div class="two">${fld('Ordinary hours / week', `<input name="ot_threshold" inputmode="decimal" ${val(r.ot_threshold ?? 45)}>`)}${fld('Overtime rate ×', `<input name="ot_mult" inputmode="decimal" ${val(r.ot_mult ?? 1.5)}>`)}</div><div class="mute">Defaults follow South Africa’s BCEA: 45 ordinary hours a week, overtime at 1.5×.</div>`, r.id ? 'Save' : 'Add staff member'];
+FORMS.person = (r = {}) => [r.id ? 'Edit staff member' : 'New staff member', `${fld('Name', `<input name="name" maxlength="80" required ${val(r.name)}>`)}${fld('Role', `<input name="role" maxlength="80" placeholder="Optional" ${val(r.role)}>`)}<div class="two">${fld(`Hourly rate (${esc(M.symbolOf(curCode()))})`, `<input name="rate" inputmode="decimal" placeholder="e.g. 30,23" ${r.rate_cents ? val((r.rate_cents / 100).toFixed(2)) : ''}>`)}${fld('Phone', `<input name="phone" inputmode="tel" maxlength="30" placeholder="Optional" ${val(r.phone)}>`)}</div><div class="two">${fld('Ordinary hours / week', `<input name="ot_threshold" inputmode="decimal" ${val(r.ot_threshold ?? 45)}>`)}${fld('Overtime rate ×', `<input name="ot_mult" inputmode="decimal" ${val(r.ot_mult ?? 1.5)}>`)}</div><label class="cb"><input type="checkbox" name="double_special" ${r.double_special ? 'checked' : ''}> Pay 2× on Sundays &amp; public holidays</label><div class="mute">Defaults follow South Africa’s BCEA: 45 ordinary hours a week, overtime at 1.5×.</div>`, r.id ? 'Save' : 'Add staff member'];
 FORMS.shift = (r = {}) => { const people = LIFE.staff.filter((x) => x.type === 'person'); return [r.id ? 'Edit shift' : 'New shift', `${fld('Who', `<select name="staff">${people.map((p) => opt(p.id, p.name, r.staff || people[0]?.id)).join('')}</select>`)}${fld('Date', `<input name="date" type="date" required ${val(r.date || LF.todayISO())}>`)}<div class="two">${fld('Start', `<input name="start" type="time" required ${val(r.start || '08:00')}>`)}${fld('End', `<input name="end" type="time" required ${val(r.end || '17:00')}>`)}</div><div class="two">${fld('Break (minutes)', `<input name="break_min" inputmode="numeric" ${val(r.break_min ?? 60)}>`)}${fld('Task', `<input name="task" maxlength="120" placeholder="Optional" ${val(r.task)}>`)}</div>`, r.id ? 'Save shift' : 'Add shift']; };
 const KEY = { task: 'tasks', reminder: 'reminders', tx: 'tx', bill: 'bills', budget: 'budgets', biz: 'biz', mem: 'mem' };
 const LIFEKEY = { journal: 'journal', goal: 'goals', person: 'staff', shift: 'staff' };
@@ -426,7 +432,7 @@ const actions = {
   edit: (id, el) => { sheet = el.dataset.k; editId = id; render(); },
   view: (id) => { tab = 'tasks'; taskView = id; sheet = null; render(true); },
   'rq-x': () => {},
-  'chat-open': () => { sheet = 'chat'; render(); paintOrbs(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
+  'chat-open': () => { sheet = 'chat'; booksNudge(); render(); paintOrbs(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
   'chat-clear': () => { if (!S.chat.length || confirm('Clear the whole conversation? This cannot be undone (it is also removed from future backups).')) { S.chat = []; save(); paintChat(true); } },
   'chat-stop': () => AI.stop(),
   'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); ($('#screen').scrollTop = 0); },
@@ -460,6 +466,13 @@ const actions = {
   'notif-test': async () => { const ok = await notify('Anna', 'This is how reminders will look.'); toast(ok ? 'Test alert sent.' : 'Could not show a notification.'); },
   lock: () => lockNow(),
   bizview: (id) => { bizView = id; render(); },
+  'ent-save': () => saveEntry(), 'ent-cancel': async () => { pendingEntry = null; say('Okay, nothing saved.'); },
+  'ent-edit': () => { const e = pendingEntry; pendingEntry = null; paintChat(true); const ta = $('.chatin textarea'); if (ta && e) { ta.value = e.text; ta.focus(); } },
+  'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
+  'books-start': () => { BK = { step: 0, month: M.booksMonth() }; booksAsk(); }, 'books-snooze': async () => { await booksState({ snoozeUntil: new Date().setHours(24, 0, 0, 0) }); say('Okay, I’ll ask again tomorrow.'); },
+  'books-skip': async () => { const st = booksStateGet(); await booksState({ skipped: [...(st.skipped || []), M.booksMonth()] }); BK = null; say('Skipped Books Day for this month.'); },
+  'books-close': () => booksClose(), 'books-later': () => { BK = null; say('Okay, the month stays open. Say “Books Day” when you’re ready.'); },
+  'books-remind': () => booksReminder(),
   sweek: (id) => { staffWeek += Number(id); render(); },
   ctab: (id) => { calcTab = id; render(); },
   'b-add': () => { BD.lines.push({ id: 'c-' + L.uid().slice(0, 8), name: 'New bill', kind: 'bill', cents: 0 }); saveDraft(); render(); const ins = document.querySelectorAll('[data-bl="name"]'); ins[ins.length - 1]?.select(); },
@@ -548,7 +561,7 @@ document.addEventListener('submit', (e) => {
   if (k === 'mem') return up({ content: f.content.trim(), category: f.category.trim() || 'General', status: f.status, ...(rec ? {} : { created_at: now }) });
   const cents = L.parseCents(f.amount ?? f.limit); if (cents === null) return toast('Enter an amount like 150 or 12,50 (more than zero).');
   if (k === 'tx') return up({ kind: f.kind, amount_cents: cents, category: f.category.trim() || 'General', note: f.note.trim() || null, occurred_at: sameDay(f.date, rec?.occurred_at) });
-  if (k === 'bill') return up({ name: f.name.trim(), amount_cents: cents, due_at: L.dayTs(f.due), repeat_monthly: f.monthly ? 1 : 0, ...(rec ? { paid: f.paid ? 1 : 0, paid_at: f.paid ? rec.paid_at || now : null } : { paid: 0, paid_at: null }) });
+  if (k === 'bill') return up({ name: f.name.trim(), amount_cents: cents, due_at: L.dayTs(f.due), priority: Number(f.priority) || 2, repeat_monthly: f.monthly ? 1 : 0, ...(rec ? { paid: f.paid ? 1 : 0, paid_at: f.paid ? rec.paid_at || now : null } : { paid: 0, paid_at: null }) });
   if (k === 'budget') { const dup = S.budgets.find((x) => x.category.toLowerCase() === f.category.trim().toLowerCase() && x.id !== rec?.id); if (dup) return mutate(() => { dup.limit_cents = cents; if (rec) S.budgets = S.budgets.filter((x) => x.id !== rec.id); }); return up({ category: f.category.trim(), limit_cents: cents }); }
   if (k === 'biz') { const inv = f.kind === 'invoice', paid = !inv || f.status === 'paid', at = sameDay(f.date, rec?.occurred_at); return up({ kind: f.kind, party: f.party.trim() || null, description: f.description.trim(), notes: f.notes.trim() || null, amount_cents: cents, status: paid ? 'paid' : 'unpaid', occurred_at: at, paid_at: paid ? (inv ? rec?.paid_at || now : at) : null }); }
 });
@@ -642,7 +655,7 @@ async function saveLifeForm(k, f, form, rec) {
     if (!rec) LIFE.goals.push(g); else Object.assign(rec, g); await LF.put('goals', g); sheet = null; editId = null; render(); return toast(rec ? 'Goal updated.' : 'Goal added.'); }
   if (k === 'person') { if (!String(f.name || '').trim()) return toast('Please enter a name.'); const rate = f.rate ? M.toCents(f.rate) : null; if (f.rate && !(rate > 0)) return toast('Hourly rate must be a number above zero, or empty.');
     const thr = Number(String(f.ot_threshold || 45).replace(',', '.')), mul = Number(String(f.ot_mult || 1.5).replace(',', '.')); if (!(thr > 0) || !(mul >= 1)) return toast('Check the overtime settings.');
-    const pr = { ...(rec || { id: L.uid(), type: 'person', created_at: now }), name: f.name.trim(), role: String(f.role || '').trim(), rate_cents: rate, phone: String(f.phone || '').trim(), ot_threshold: thr, ot_mult: mul };
+    const pr = { ...(rec || { id: L.uid(), type: 'person', created_at: now }), name: f.name.trim(), role: String(f.role || '').trim(), rate_cents: rate, phone: String(f.phone || '').trim(), ot_threshold: thr, ot_mult: mul, double_special: !!f.double_special };
     if (!rec) LIFE.staff.push(pr); else Object.assign(rec, pr); await LF.put('staff', pr); sheet = null; editId = null; render(); return toast(rec ? 'Saved.' : 'Staff member added.'); }
   if (k === 'shift') { if (!f.staff) return toast('Add a staff member first.'); try { M.shiftHours(f.start, f.end, f.break_min); } catch (e) { return toast(e.message); }
     const sh = { ...(rec || { id: L.uid(), type: 'shift', created_at: now }), staff: f.staff, date: f.date, start: f.start, end: f.end, break_min: Number(f.break_min) || 0, task: String(f.task || '').trim() };
@@ -704,7 +717,7 @@ function affordResult() { const a = AFF.amount.trim() ? M.toCents(AFF.amount) : 
 function affordPanel() { return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Can I afford it?"><div class="gr"></div><div class="row"><h2 class="grow">Can I afford it?</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="mute" style="margin:4px 0 8px">Uses only your saved monthly budget and recorded money. It never guesses missing figures.</div><div class="two">${fld('Price', `<input data-a="amount" inputmode="decimal" placeholder="e.g. 2000" value="${esc(AFF.amount)}">`)}${fld('What for', `<input data-a="what" maxlength="60" placeholder="Optional" value="${esc(AFF.what)}">`)}</div><div class="card" id="ares">${affordResult()}</div></div>`; }
 function staffHTML() { M.setCurrency(curCode()); const people = LIFE.staff.filter((x) => x.type === 'person'), shifts = LIFE.staff.filter((x) => x.type === 'shift'), at = Date.now() + staffWeek * 7 * 864e5, from = M.weekStart(at), to = from + 7 * 864e5, mm = (c) => esc(M.money(c));
-  const ts = M.timesheet(people, shifts, at), wk = shifts.filter((s) => { const t = new Date(s.date + 'T12:00:00').getTime(); return t >= from && t < to; }).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const ts = M.timesheet(people, shifts, at, { isSpecialDay }), wk = shifts.filter((s) => { const t = new Date(s.date + 'T12:00:00').getTime(); return t >= from && t < to; }).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
   const biz = S.biz.filter((r) => r.occurred_at >= from && r.occurred_at < to), sales = biz.filter((r) => r.kind === 'sale').reduce((n, r) => n + r.amount_cents, 0), exp = biz.filter((r) => r.kind === 'expense').reduce((n, r) => n + r.amount_cents, 0), wages = ts.reduce((n, t) => n + (t.pay || 0), 0);
   const label = `${new Date(from).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} – ${new Date(to - 864e5).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}`;
   return `<div class="adds">${addBtn('person', '＋ Staff member')}${people.length ? addBtn('shift', '＋ Shift', 'soft') : ''}</div>
@@ -712,15 +725,119 @@ function staffHTML() { M.setCurrency(curCode()); const people = LIFE.staff.filte
   ${sh('Timesheet', `<span class="mute">${esc(label)}</span>`)}<div class="card">${ts.map((t) => `<div class="item"><div class="grow tap" data-act="edit" data-k="person" data-id="${t.id}"><b>${esc(t.name)}</b><div class="mute">${t.shifts} shift${t.shifts === 1 ? '' : 's'} · ${M.fmtNum(t.hours)} h${t.overtime ? ` · ${M.fmtNum(t.overtime)} h overtime` : ''}</div>${t.steps.length ? `<div class="mute" style="font-size:12px">${t.steps.map(esc).join('<br>')}</div>` : ''}</div><b>${t.pay !== null ? mm(t.pay) : '<span class="mute">add rate</span>'}</b></div>`).join('') || empty('Add your staff to track hours and wages.')}</div>
   <div class="card"><div class="status">${kv('Wages this week', mm(wages))}${kv('Sales recorded', mm(sales))}${kv('Business expenses', mm(exp))}${kv('Sales − expenses − wages', mm(sales - exp - wages), sales - exp - wages < 0 ? 'n' : 'y')}</div><div class="mute" style="margin-top:6px;font-size:13px">Only shifts, rates and records you entered. Sales and expenses come from Business → Overview.</div></div>
   ${sh('Shifts')}<div class="card">${wk.map((s) => { const p = people.find((x) => x.id === s.staff); let h = ''; try { h = M.fmtNum(M.shiftHours(s.start, s.end, s.break_min)) + ' h'; } catch {} return `<div class="item"><div class="grow tap" data-act="edit" data-k="shift" data-id="${s.id}"><b>${esc(p?.name || 'Unknown')}</b><div class="mute">${esc(new Date(s.date + 'T12:00:00').toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${s.start}–${s.end}${s.break_min ? ` · ${s.break_min} min break` : ''} · ${h}${s.task ? ' · ' + esc(s.task) : ''}</div></div>${editBtn('shift', s.id)}</div>`; }).join('') || empty('No shifts this week.')}</div>`; }
+const isSpecialDay = (iso) => new Date(iso + 'T12:00:00').getDay() === 0 || !!TM.holidayOn(new Date(iso + 'T12:00:00').getTime());
+// ---- chat money entries: parse → confirm card → save (only on tap) → warnings, with Undo ----
+function say(text, extra = {}) { S.chat.push({ role: 'assistant', content: text, at: Date.now(), tool: 'money', ...extra }); paintChat(true); return save(); }
+const monthId = () => 'budget-' + monthNow();
+function monthRec(create) { let m = LIFE.finance.find((x) => x.id === monthId()); if (!m && create) { loadDraft(); m = { id: monthId(), type: 'budget', month: monthNow(), currency: BD.currency, days: BD.days, lines: BD.lines.map((l) => ({ ...l })), saved_at: Date.now(), spent: {}, saved: 0, next: [] }; } return m; }
+const findBill = (name, unpaidOnly) => S.bills.find((b) => (!unpaidOnly || !b.paid) && M.sameName(b.name, name));
+function describeEntry(e) {
+  M.setCurrency(curCode()); const m = (c) => M.money(c), b = findBill(e.name), bu = findBill(e.name, true);
+  switch (e.type) {
+    case 'income': return `Add ${m(e.amount)} ${e.label.toLowerCase()} to ${monthName(monthNow())}?`;
+    case 'expense': return `Record ${m(e.amount)} spent on ${e.category}?`;
+    case 'billNew': return `Add a new bill “${e.name}”, ${m(e.amount)}${e.thisMonthOnly ? ' for this month only' : ' every month'}?`;
+    case 'billSet': return `Change ${b?.name || e.name} to ${m(e.amount)}${b ? ` (was ${m(b.amount_cents)})` : ''}?`;
+    case 'billCancel': return `Remove the bill “${b?.name || e.name}”${b ? ` (${m(b.amount_cents)})` : ''}?`;
+    case 'billPaid': return `Mark ${bu.name} (${m(e.amount || bu.amount_cents)}) as paid and record it as spent?`;
+    case 'saved': return `Record ${m(e.amount)} saved this month?`;
+    default: return `Note ${e.name}, ${m(e.amount)}, for next month?`;
+  }
+}
+function entryReply(text) {
+  const e = M.parseEntry(text); if (!e) return '';
+  if (e.type === 'billPaid' && !findBill(e.name, true)) return `I couldn’t find an unpaid bill called “${e.name}”. Unpaid bills: ${S.bills.filter((b) => !b.paid).map((b) => b.name).join(', ') || 'none'}.`;
+  if (e.type === 'billCancel' && !findBill(e.name) && !(monthRec()?.lines || []).some((l) => M.sameName(l.name, e.name))) return `I couldn’t find a bill called “${e.name}”.`;
+  pendingEntry = { ...e, text }; return describeEntry(e);
+}
+async function saveEntry() {
+  const e = pendingEntry; if (!e) return; pendingEntry = null; M.setCurrency(curCode());
+  const existing = monthRec(), month = monthRec(true);
+  const before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), month: existing ? JSON.parse(JSON.stringify(existing)) : null, monthId: month.id };
+  month.spent ||= {}; month.saved ||= 0; month.next ||= [];
+  const now = Date.now(), endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), line = (name) => month.lines.find((l) => M.sameName(l.name, name));
+  let done = '';
+  if (e.type === 'income') { S.tx.push({ id: L.uid(), kind: 'income', amount_cents: e.amount, category: e.label, note: null, occurred_at: now }); const x = month.lines.find((l) => l.id === 'extra'); if (x) x.cents += e.amount; else month.lines.push({ id: 'extra', name: 'Extra income', kind: 'income', cents: e.amount }); done = `Saved: ${M.money(e.amount)} ${e.label.toLowerCase()}.`; }
+  else if (e.type === 'expense') { S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: e.amount, category: e.category, note: null, occurred_at: now }); month.spent[e.category] = (month.spent[e.category] || 0) + e.amount; done = `Saved: ${M.money(e.amount)} on ${e.category}.`; }
+  else if (e.type === 'billNew' || (e.type === 'billSet' && !findBill(e.name) && !line(e.name))) { const id = L.uid(); S.bills.push({ id, name: e.name, amount_cents: e.amount, due_at: endOfMonth, priority: 2, repeat_monthly: e.thisMonthOnly ? 0 : 1, paid: 0, paid_at: null }); const ln = line(e.name); if (ln && !e.thisMonthOnly) ln.cents = e.amount; else month.lines.push({ id: 'c-' + id.slice(0, 8), name: e.name, kind: 'bill', cents: e.amount, oneMonth: !!e.thisMonthOnly }); done = `Saved: ${e.name}, ${M.money(e.amount)}${e.thisMonthOnly ? ' (this month)' : ' a month'}. Priority 2, due ${dstr(endOfMonth)}: change it in Money → Bills.`; }
+  else if (e.type === 'billSet') { const b = findBill(e.name), l = line(e.name); if (b) b.amount_cents = e.amount; if (l) l.cents = e.amount; done = `Saved: ${(b || l).name} is now ${M.money(e.amount)}.`; }
+  else if (e.type === 'billCancel') { const b = findBill(e.name), l = line(e.name); if (b) S.bills = S.bills.filter((x) => x !== b); if (l) { if (l.id.startsWith('c-')) month.lines = month.lines.filter((x) => x !== l); else l.cents = 0; } done = `Saved: ${(b || l).name} removed.`; }
+  else if (e.type === 'billPaid') { const b = findBill(e.name, true); if (e.amount) b.amount_cents = e.amount; L.payBill(S, b.id, { recordExpense: true, now }); done = `Saved: ${b.name} marked paid.`; }
+  else if (e.type === 'saved') { month.saved += e.amount; done = `Saved: ${M.money(e.amount)} put away this month.`; }
+  else { month.next.push({ name: e.name, amount: e.amount }); done = `Saved: ${e.name} (${M.money(e.amount)}) noted for next month.`; }
+  month.totals = M.monthly(month.lines, { days: month.days || 30 }); month.saved_at = now;
+  LIFE.finance = LIFE.finance.filter((x) => x.id !== month.id).concat(month); await LF.put('finance', month); await save();
+  const ok = (await kvGet('state'))?.tx?.length === S.tx.length && (await LF.loadAll()).finance.some((x) => x.id === month.id);
+  if (!ok) { S.tx = before.tx; S.bills = before.bills; await save(); return say('I couldn’t save that on this device. Nothing was changed.'); }
+  const uid = L.uid(); entryUndo[uid] = before;
+  await say([done, ...monthWarnings(month)].join('\n'), { undo: uid });
+  if (BK) booksAsk(true);
+}
+const daysLeftInMonth = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate() + 1; };
+function monthWarnings(month) {
+  const st = M.monthState(month, { daysLeft: daysLeftInMonth(), budgets: L.budgetStatus(S) });
+  return st.warnings.map((w) => '⚠ ' + w.text + (w.options.length ? ' Options: ' + w.options.join('; or ') + '. You decide.' : ''));
+}
+function payFirstText() {
+  M.setCurrency(curCode()); const ms = L.monthSummary(S), m = monthRec(); let available = null, basis = '';
+  if (ms.income > 0) { available = ms.income - ms.expense; basis = `recorded income ${M.money(ms.income)} minus recorded spending ${M.money(ms.expense)}`; }
+  else if (m) { const t = M.monthly(m.lines, { days: m.days || 30 }); available = t.income - t.savings - t.living - t.once; basis = `your plan: income ${M.money(t.income)} minus savings, living and once-off costs`; }
+  const o = M.payOrder(S.bills, available); if (!o.rows.length) return 'All your bills are paid.';
+  const rows = o.rows.map((b, i) => `${i + 1}. ${b.name} (P${b.priority || 2}, due ${dstr(b.due_at)}): ${M.money(b.amount_cents)} · running ${M.money(b.running)}${i === o.runsOutAt ? '  ← money runs out here' : ''}`);
+  const tail = available == null ? 'I don’t know how much money you have this month: record your income or save a monthly budget.' : `Available: ${M.money(available)} (${basis}). ${o.short ? `You are ${M.money(o.short)} short for all of them.` : `Enough for all unpaid bills, with ${M.money(available - o.total)} left.`}`;
+  return ['Pay in this order (priority, then due date):', ...rows, tail].join('\n');
+}
+// ---- Books Day ----
+const booksStateGet = () => prefOf('books') || {};
+const booksState = (patch) => setPref('books', { ...booksStateGet(), ...patch });
+function booksNudge() {
+  if (BK || !M.booksDue(Date.now(), booksStateGet())) return;
+  booksState({ lastAsked: new Date().toDateString() });
+  S.chat.push({ role: 'assistant', content: `It’s Books Day for ${monthName(M.booksMonth())}. Shall we close the month together? I’ll ask one question at a time.`, at: Date.now(), tool: 'money', books: [['books-start', 'Start'], ['books-snooze', 'Tomorrow', 'sage'], ['books-skip', 'Skip this month', 'sage']] }); save();
+}
+function booksAsk(again) {
+  if (!BK) return; const q = M.BOOKS_QUESTIONS[BK.step]; if (!q) return booksFinish();
+  let text = again ? 'Anything else? Or say “none” to move on.' : q[1];
+  if (!again && q[0] === 'paid') { const un = S.bills.filter((b) => !b.paid); text += un.length ? ` Unpaid now: ${un.map((b) => b.name).join(', ')}.` : ' (All bills are already marked paid: say “none”.)'; }
+  say(text);
+}
+function booksAnswer(text) {
+  if (M.isNone(text)) { BK.step++; if (BK.step >= M.BOOKS_QUESTIONS.length) { setTimeout(booksFinish, 0); return 'Thanks, that’s everything.'; } setTimeout(() => booksAsk(), 0); return 'Okay.'; }
+  if (/^\s*(stop|cancel|later|not now)\s*$/i.test(text)) { BK = null; return 'Okay, we’ll stop here. Say “Books Day” to continue another time.'; }
+  return entryReply(text) || 'I didn’t catch an amount there. Try e.g. “got R500 extra”, or say “none”.';
+}
+function booksFinish() {
+  const m = monthRec(true); M.setCurrency(m.currency || curCode()); const st = M.monthState(m, { daysLeft: daysLeftInMonth() });
+  const cur = { income: st.income, expenses: st.expenses + st.unplanned + st.over, saved: m.saved || 0, remaining: st.remaining }; BK.summary = cur;
+  const t = new Date(), prevYm = M.booksMonth(new Date(t.getFullYear(), t.getMonth() - 1, 15).getTime()), prev = LIFE.finance.find((x) => x.id === 'books-' + prevYm)?.summary || null;
+  say([`Summary for ${monthName(monthNow())}:`, ...M.booksSummary(cur, prev), prev ? '' : '(No closed month before this one to compare with.)', 'Close the month and carry your bills and priorities forward?'].filter(Boolean).join('\n'), { books: [['books-close', 'Close the month'], ['books-later', 'Not yet', 'sage']] });
+}
+async function booksClose() {
+  if (!BK) return; const m = monthRec(true), ym = BK.month, nextYm = M.booksMonth(new Date(+ym.slice(0, 4), +ym.slice(5, 7), 15).getTime());
+  const rec = { id: 'books-' + ym, type: 'books', month: ym, summary: BK.summary, closed_at: Date.now() };
+  LIFE.finance = LIFE.finance.filter((x) => x.id !== rec.id).concat(rec); await LF.put('finance', rec);
+  if (!LIFE.finance.some((x) => x.id === 'budget-' + nextYm)) { const nm = { id: 'budget-' + nextYm, type: 'budget', month: nextYm, currency: m.currency, days: m.days || 30, lines: M.carryForward(m.lines, m.next || []), spent: {}, saved: 0, next: [], saved_at: Date.now() }; nm.totals = M.monthly(nm.lines, { days: nm.days }); LIFE.finance.push(nm); await LF.put('finance', nm); }
+  S.bills = S.bills.filter((b) => b.repeat_monthly || !b.paid); await save(); await booksState({ closed: [...(booksStateGet().closed || []), ym] }); BK = null;
+  const ok = (await LF.loadAll()).finance.some((x) => x.id === rec.id);
+  say(ok ? `${monthName(ym)} is closed. ${monthName(nextYm)}’s plan starts with your recurring bills and their priorities.` : 'I couldn’t close the month on this device. Please try again.', ok ? { books: [['books-remind', 'Send next Books Day to iPhone Reminders']] } : {});
+}
+async function booksReminder() {
+  const d = new Date(); let at = new Date(d.getFullYear(), d.getMonth(), M.BOOKS_DAY, 18, 0).getTime();
+  if (at <= Date.now() || booksStateGet().closed?.includes(M.booksMonth())) at = new Date(d.getFullYear(), d.getMonth() + 1, M.BOOKS_DAY, 18, 0).getTime();
+  let r = S.reminders.find((x) => x.title === 'ANNA Books Day' && !x.done);
+  if (!r) { r = { id: L.uid(), title: 'ANNA Books Day', notes: 'Open ANNA and close the month', at, repeat: 'monthly', notified: 0, done: 0, done_at: null, created_at: Date.now(), dest: { anna: Date.now() } }; S.reminders.unshift(r); } else r.at = at;
+  await save(); actions['rem-ios'](r.id);
+}
 // chat questions about money/staff → exact answers from money.js
 function moneyReply(text) {
+  if (/\bwhat (?:must|should|do) i pay first\b|\bwhich bills? (?:first|should i pay)|\bpay first\b|\bbills? (?:priority|order)\b/i.test(text)) return payFirstText();
   const t = text.toLowerCase(), amtM = text.match(/(?:R|\$|€|£)?\s?(\d[\d\s,]*(?:[.,]\d{1,2})?)/), amount = amtM ? M.toCents(amtM[1]) : null;
   if (/\b(can i afford|could i afford|should i (buy|spend|get|pay)|is it (ok|okay|wise) to (spend|buy)|afford)\b/.test(t)) { if (!(amount > 0)) return 'How much does it cost? For example: “Can I afford R2,000?”'; const what = (text.match(/\b(?:on|for)\s+(?:a |an |the )?([a-z][\w\s-]{1,40}?)\??$/i) || [])[1] || ''; return affordText(amount, what); }
   let m;
   if ((m = t.match(/(\d[\d\s,.]*)\s*(?:%|percent)\s+of\s+r?\s?(\d[\d\s,.]*)/))) { const r = M.percentOf(M.evaluate(m[1]).toFixed(), M.evaluate(m[2]).toFixed()); return `${M.fmtNum(r.result)}\n${r.steps.join('\n')}`; }
   if (/\bvat\b/.test(t) && amount > 0) { const remove = /\b(remove|minus|take off|exclud\w*|excl|without|out of|from|inclusive|incl\.? price)\b/.test(t); M.setCurrency(curCode()); const r = M.vat(amount, remove ? 'remove' : 'add'); return `${M.money(r.excl)} excl. VAT · ${M.money(r.vat)} VAT · ${M.money(r.incl)} incl. VAT\n${r.steps.join('\n')}`; }
   if (/\b(how much (money )?(is |do i have )?left|my (monthly )?budget|money left this month|remaining this month)\b/.test(t)) { const b = budgetFor(monthNow()); if (!b) return 'You haven’t saved a monthly budget for this month yet. Open Money → Monthly calculator, fill it in and tap Save. I won’t guess the numbers.'; M.setCurrency(b.currency); return `${monthName(monthNow())}: ${M.money(b.remaining)} left after ${M.money(b.expenses)} expenses and ${M.money(b.savings)} savings (income ${M.money(b.income)}).\nThat is ${M.money(b.weekly)} a week or ${M.money(b.daily)} a day (${b.days}-day month).`; }
-  if (/\bhow many hours\b|\b(wages?|overtime)\b.*\b(staff|this week|team)\b|\bstaff\b.*\b(hours|wages)\b/.test(t)) { const people = LIFE.staff.filter((x) => x.type === 'person'); if (!people.length) return 'You haven’t added any staff yet (Business → Staff).'; M.setCurrency(curCode()); const ts = M.timesheet(people, LIFE.staff.filter((x) => x.type === 'shift')); const named = ts.filter((x) => t.includes(x.name.toLowerCase())), list = named.length ? named : ts;
+  if (/\bhow many hours\b|\b(wages?|overtime)\b.*\b(staff|this week|team)\b|\bstaff\b.*\b(hours|wages)\b/.test(t)) { const people = LIFE.staff.filter((x) => x.type === 'person'); if (!people.length) return 'You haven’t added any staff yet (Business → Staff).'; M.setCurrency(curCode()); const ts = M.timesheet(people, LIFE.staff.filter((x) => x.type === 'shift'), Date.now(), { isSpecialDay }); const named = ts.filter((x) => t.includes(x.name.toLowerCase())), list = named.length ? named : ts;
     return 'This week (from the shifts you entered):\n' + list.map((x) => `${x.name}: ${M.fmtNum(x.hours)} h${x.overtime ? ` (${M.fmtNum(x.overtime)} h overtime)` : ''}, ${x.pay !== null ? 'wages ' + M.money(x.pay) : 'no hourly rate entered'}`).join('\n'); }
   const ex = text.replace(/^(what(?:'s| is)|calculate|calc|work out|how much is)\s+/i, '').replace(/[?=]\s*$/, '').trim();
   if (/[\d)]\s*[-+*/x×÷^%]\s*[\d(]|\d\s*%\s*$/.test(ex) && /^[\s\dR.,+\-*/x×÷^()%]+$/i.test(ex)) { try { const v = M.evaluate(ex); return `${M.fmtNum(v, 6)}\n${ex} = ${M.fmtNum(v, 6)} (calculated exactly)`; } catch (e) { return e.message; } }
