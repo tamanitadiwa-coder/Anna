@@ -13,7 +13,7 @@ const brain = async (v) => { await page.click('#tabs [data-tab="brain"]'); await
 const submit = () => page.click('#sheet form button:not([type=button])');
 try {
   await open();
-  R.ok(JSON.stringify(await page.evaluate(() => new Promise((res) => { const r = indexedDB.open('anna-life'); r.onsuccess = () => res([...r.result.objectStoreNames].sort()); }))) === JSON.stringify(['goals', 'journal', 'memories', 'preferences', 'profile', 'progress']), 'separate IndexedDB stores: profile, preferences, goals, journal, memories, progress');
+  R.ok(JSON.stringify(await page.evaluate(() => new Promise((res) => { const r = indexedDB.open('anna-life'); r.onsuccess = () => res([...r.result.objectStoreNames].sort()); }))) === JSON.stringify(['finance', 'goals', 'journal', 'memories', 'preferences', 'profile', 'progress', 'staff']), 'separate IndexedDB stores: profile, preferences, goals, journal, memories, progress, finance, staff');
   // ---- journal ----
   await brain('journal');
   await page.click('[data-act="open"][data-id="journal"]'); R.ok(/Private/.test(await page.locator('#sheet').innerText()), 'journal form says entries are private');

@@ -1,6 +1,6 @@
 // ANNA — personal life record. Separate IndexedDB database "anna-life", one object store per kind of data, so the
 // journal can never be mixed into memories or prompts by accident. Pure helpers below the storage part are unit-tested.
-export const STORES = ['profile', 'preferences', 'goals', 'journal', 'memories', 'progress'];
+export const STORES = ['profile', 'preferences', 'goals', 'journal', 'memories', 'progress', 'finance', 'staff'];
 export const MOODS = [[1, 'Very low'], [2, 'Low'], [3, 'Okay'], [4, 'Good'], [5, 'Great']];
 export const TAGS = [['event', 'Event'], ['relationship', 'Relationship'], ['achievement', 'Achievement'], ['challenge', 'Challenge']];
 export const HORIZONS = [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['long', 'Long-term'], ['habit', 'Habit']];
@@ -9,7 +9,7 @@ export const emptyLife = () => Object.fromEntries(STORES.map((s) => [s, []]));
 
 // ---- storage (browser only) ----
 let dbp = null;
-const db = () => (dbp ||= new Promise((res, rej) => { const r = indexedDB.open('anna-life', 1); r.onupgradeneeded = () => { for (const s of STORES) if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' }); }; r.onsuccess = () => res(r.result); r.onerror = () => { dbp = null; rej(r.error); }; }));
+const db = () => (dbp ||= new Promise((res, rej) => { const r = indexedDB.open('anna-life', 2); r.onupgradeneeded = () => { for (const s of STORES) if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' }); }; r.onsuccess = () => res(r.result); r.onerror = () => { dbp = null; rej(r.error); }; }));
 const tx = async (stores, mode, fn) => { const d = await db(); return new Promise((res, rej) => { const t = d.transaction(stores, mode); let out; Promise.resolve(fn(t)).then((v) => { out = v; }); t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }); };
 const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 export async function loadAll() { const out = emptyLife(); await tx(STORES, 'readonly', (t) => Promise.all(STORES.map(async (s) => { out[s] = await req(t.objectStore(s).getAll()); }))); return out; }
