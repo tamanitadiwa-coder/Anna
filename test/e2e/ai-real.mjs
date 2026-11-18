@@ -17,7 +17,7 @@ let { srv, url } = await serve(SITE, 0);
 const cdn = realHF ? null : await serve(FILE.replace(/\/[^/]+$/, ''), 0, '/cdn/');
 let internet = true;
 async function open() {
-  const ctx = await pw.chromium.launchPersistentContext(dir, { viewport: { width: 430, height: 932 }, deviceScaleFactor: 1, ignoreHTTPSErrors: realHF, ...(realHF ? { proxy: { server: process.env.HTTPS_PROXY } } : {}), args: [] });
+  const ctx = await pw.chromium.launchPersistentContext(dir, { viewport: { width: 430, height: 932 }, deviceScaleFactor: 1, ignoreHTTPSErrors: realHF && !!process.env.HTTPS_PROXY, ...(realHF && process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY, bypass: '127.0.0.1,localhost' } } : {}), args: [] });
   if (safari) await ctx.addInitScript(SAFARI_ENGINE);
   await ctx.route('https://huggingface.co/**', async (route) => {
     if (!internet) return route.abort('internetdisconnected');
