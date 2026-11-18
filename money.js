@@ -129,12 +129,84 @@ export function afford(amount, data, now = Date.now()) {
 // ---- staff ----
 export const weekStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
 // shifts: [{staff, date:'YYYY-MM-DD', start, end, break_min}] → per person for the week containing `now`
-export function timesheet(people, shifts, now = Date.now()) {
+export function timesheet(people, shifts, now = Date.now(), { isSpecialDay = (iso) => new Date(iso + 'T12:00:00').getDay() === 0 } = {}) {
   const from = weekStart(now), to = from + 7 * 864e5;
   return people.map((p) => {
     const mine = shifts.filter((s) => s.staff === p.id && new Date(s.date + 'T12:00:00').getTime() >= from && new Date(s.date + 'T12:00:00').getTime() < to);
-    const hours = Number(mine.reduce((n, s) => n.plus(shiftHours(s.start, s.end, s.break_min)), B(0)));
-    const w = p.rate_cents ? wages(hours, p.rate_cents, { threshold: p.ot_threshold ?? 45, multiplier: p.ot_mult ?? 1.5 }) : null;
-    return { id: p.id, name: p.name, shifts: mine.length, hours, overtime: w?.overtime ?? null, pay: w?.total ?? null, steps: w?.steps || [], missing: p.rate_cents ? [] : ['hourly rate'] };
+    const hrs = (s) => B(shiftHours(s.start, s.end, s.break_min)), dbl = p.double_special ? mine.filter((s) => isSpecialDay(s.date)) : [];
+    const hours = Number(mine.reduce((n, s) => n.plus(hrs(s)), B(0))), special = Number(dbl.reduce((n, s) => n.plus(hrs(s)), B(0)));
+    if (!p.rate_cents) return { id: p.id, name: p.name, shifts: mine.length, hours, special, overtime: null, pay: null, steps: [], missing: ['hourly rate'] };
+    const w = wages(Number(B(hours).minus(special)), p.rate_cents, { threshold: p.ot_threshold ?? 45, multiplier: p.ot_mult ?? 1.5 }), sp = cents(B(special).times(p.rate_cents).times(2));
+    const steps = special ? [...w.steps.slice(0, -1), `Sundays & public holidays: ${fmtNum(special)} h × ${money(p.rate_cents)} × 2 = ${money(sp)}`, `Total = ${money(w.total + sp)}`] : w.steps;
+    return { id: p.id, name: p.name, shifts: mine.length, hours, special, overtime: w.overtime, pay: w.total + sp, steps, missing: [] };
   });
+}
+
+// ================= v0.10: chat entries, warnings, bill priorities, Books Day =================
+const AMT = /(?:R|\$|€|£)\s?(\d[\d\s,]*(?:[.,]\d{1,2})?)|(\d[\d\s,]*(?:[.,]\d{1,2})?)\s*(?:rand|bucks)?/i;
+const amountIn = (t) => { const m = String(t).match(AMT); return m ? toCents((m[1] || m[2]).trim()) : null; };
+const clean = (s) => String(s || '').replace(/\b(this month|per month|a month|monthly|every month|from now on)\b/gi, '').replace(/[.?!]+$/, '').replace(/\s+/g, ' ').trim();
+const cap = (s) => s.replace(/^./, (c) => c.toUpperCase());
+// Turns a short chat sentence into a money entry, or null. Amounts come from the text only.
+export function parseEntry(text) {
+  const t = String(text || '').trim(), lo = t.toLowerCase(), amt = amountIn(t);
+  let m;
+  if ((m = lo.match(/^(?:i\s+)?(?:have\s+)?(?:cancell?ed|stopped|ended|no longer pay(?:ing)?(?: for)?|dropped)\s+(?:my\s+|the\s+)?(.+)$/))) return { type: 'billCancel', name: cap(clean(t.slice(t.length - m[1].length))) };
+  if ((m = lo.match(/^(?:i\s+)?(?:have\s+)?paid\s+(?:the\s+|my\s+)?([a-z][a-z\s&'-]*?)(?:\s+(?:bill|account))?(?:\s*(?:of\s+)?(?:r|\$|€|£)?\s?\d.*)?$/)) && !/\bon\b/.test(lo)) return { type: 'billPaid', name: cap(clean(m[1])), amount: amt };
+  if (!(amt > 0)) return null;
+  if (/\bnext month\b/.test(lo)) { const name = clean(t.replace(AMT, '').replace(/\bnext month\b/i, '').replace(/^(?:there(?:'s| is)|i have|i'll have|i will have|coming up:?)\s+/i, '').replace(/\b(due|for|of|on)\s*$/i, '')); return { type: 'nextMonth', name: cap(name || 'Next month cost'), amount: amt }; }
+  if (/\b(saved|put (?:away|aside)|moved .* to savings|into savings)\b/.test(lo)) return { type: 'saved', amount: amt };
+  if ((m = t.match(/^(?:my\s+|the\s+)?(.+?)\s+(?:is|are|went up to|goes up to|has gone up to|costs?)\s+now\s+|^(?:my\s+|the\s+)?(.+?)\s+(?:is now|are now|went up to|went down to|goes up to|now costs?)\s+/i))) return { type: 'billSet', name: cap(clean(m[1] || m[2])), amount: amt };
+  if (/\b(got|received|earned|was paid|they paid me|bonus|extra income|side hustle|made)\b/.test(lo) && !/\bspent|bought\b/.test(lo)) return { type: 'income', amount: amt, label: /\bbonus\b/.test(lo) ? 'Bonus' : 'Extra income' };
+  if ((m = lo.match(/\b(?:spent|paid|bought|used)\b.*?\b(?:on|for)\s+(.+)$/)) || (m = lo.match(/\b(?:spent|bought)\s+(.+?)\s+(?:for\s+)?(?:r|\$|€|£)?\s?\d/))) return { type: 'expense', amount: amt, category: cap(clean(m[1].replace(AMT, '').replace(/^(?:a|an|the|some)\s+/, '')) || 'General') };
+  const name = clean(t.replace(AMT, '').replace(/^(?:new bill:?|add(?: a)? bill(?: for)?:?)\s*/i, '').replace(/\b(for|at|of|costs?)\s*$/i, ''));
+  if (name && name.length <= 40 && /^[a-z]/i.test(name)) return { type: 'billNew', name: cap(name), amount: amt, thisMonthOnly: /\bthis month\b/i.test(t) && !/\b(per|every|a) month|monthly\b/i.test(t) };
+  return null;
+}
+export const sameName = (a, b) => { const n = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); const x = n(a), y = n(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
+
+// month = { lines (monthly-calculator lines), spent: {category: cents}, extraSpend, saved, days } → effective position + warnings
+export function monthState(month, { daysLeft = 30, budgets = [] } = {}) {
+  const t = monthly(month.lines, { days: month.days || 30 }), spent = month.spent || {};
+  const planned = Object.fromEntries(month.lines.filter((l) => l.kind === 'living').map((l) => [l.name.toLowerCase(), l]));
+  let over = 0; const overs = [];
+  for (const [cat, c] of Object.entries(spent)) { const l = Object.values(planned).find((p) => sameName(p.name, cat) || sameName(p.name.split(/[ &/]/)[0], cat)); if (l) { if (c > l.cents) { over += c - l.cents; overs.push({ name: l.name, planned: l.cents, spent: c, over: c - l.cents }); } } }
+  for (const b of budgets) if (b.spent > b.limit_cents && !overs.some((o) => sameName(o.name, b.category))) overs.push({ name: b.category, planned: b.limit_cents, spent: b.spent, over: b.spent - b.limit_cents });
+  const unplanned = Object.entries(spent).filter(([cat]) => !Object.values(planned).some((p) => sameName(p.name, cat) || sameName(p.name.split(/[ &/]/)[0], cat))).reduce((n, [, c]) => n + c, 0);
+  const remaining = t.remaining - unplanned - over, dailyLeft = cents(B(remaining).div(Math.max(1, daysLeft))), plannedDaily = t.daily;
+  const warnings = [], savingsLine = t.savings;
+  if (remaining < 0) {
+    const need = -remaining, opts = [];
+    if (savingsLine > 0) opts.push(`use ${money(Math.min(need, savingsLine))} of your ${money(savingsLine)} savings${savingsLine < need ? ` (still ${money(need - savingsLine)} short)` : ''}`);
+    const living = month.lines.filter((l) => l.kind === 'living' && l.cents > 0).sort((a, b) => b.cents - a.cents)[0]; if (living) opts.push(`cut ${living.name} from ${money(living.cents)} to ${money(Math.max(0, living.cents - need))}`);
+    const once = month.lines.find((l) => l.kind === 'once' && l.cents > 0); if (once) opts.push(`postpone once-off costs (${money(once.cents)})`);
+    warnings.push({ kind: 'minus', text: `This month is now ${money(need)} in the minus.`, options: opts });
+    if (savingsLine > 0) warnings.push({ kind: 'savings', text: `Covering it would eat ${money(Math.min(need, savingsLine))} of your planned ${money(savingsLine)} savings.`, options: [] });
+  }
+  for (const o of overs) warnings.push({ kind: 'category', text: `${o.name} is ${money(o.over)} over its ${money(o.planned)} plan (${money(o.spent)} spent).`, options: [] });
+  if (remaining >= 0 && plannedDaily > 0 && dailyLeft < plannedDaily / 2) warnings.push({ kind: 'daily', text: `Only ${money(dailyLeft)} a day is left for the next ${daysLeft} day${daysLeft === 1 ? '' : 's'} (your plan was ${money(plannedDaily)} a day).`, options: [] });
+  return { ...t, remaining, dailyLeft, unplanned, over, overs, warnings };
+}
+
+// Bill priorities: unpaid bills by priority (1 first), then due date, with a running total against what is available.
+export function payOrder(bills, available) {
+  const list = bills.filter((b) => !b.paid).sort((a, b) => (a.priority || 2) - (b.priority || 2) || (a.due_at || 0) - (b.due_at || 0));
+  let run = 0, runsOutAt = -1;
+  const rows = list.map((b, i) => { run += b.amount_cents; if (available != null && runsOutAt < 0 && run > available) runsOutAt = i; return { ...b, running: run, covered: available == null ? null : run <= available }; });
+  return { rows, total: run, available, runsOutAt, short: available != null && run > available ? run - available : 0 };
+}
+
+// Books Day: the 25th. Due from the 25th until the month is closed (or skipped); asked at most once per day.
+export const BOOKS_DAY = 25;
+export const booksMonth = (t = Date.now()) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+export function booksDue(t, state = {}) { const d = new Date(t), ym = booksMonth(t); if (d.getDate() < BOOKS_DAY) return false; if (state.closed?.includes(ym) || state.skipped?.includes(ym)) return false; if (state.snoozeUntil && t < state.snoozeUntil) return false; const today = d.toDateString(); return state.lastAsked !== today; }
+export const BOOKS_QUESTIONS = [['income', 'Any income this month you haven’t recorded yet? (e.g. “got R500 extra”, or say “none”)'], ['expenses', 'Any expenses you haven’t recorded? (e.g. “spent R200 on food”)'], ['paid', 'Which bills are paid? (e.g. “paid rent”)'], ['bills', 'Any new or cancelled bills? (e.g. “Apple Music R60”, “cancelled Netflix”)'], ['saved', 'Did you save anything this month? (e.g. “saved R1000”)'], ['next', 'Anything coming up next month? (e.g. “school fees R3000 next month”)']];
+export const isNone = (t) => /^\s*(none|no|nope|nothing|nah|next|skip( this)?|done|that'?s (it|all)|n\/a)\s*[.!]?\s*$/i.test(t);
+export function booksSummary(cur, prev) {
+  const line = (k, label) => `${label}: ${money(cur[k])}${prev && prev[k] != null ? ` (${cur[k] - prev[k] >= 0 ? '+' : '−'}${money(Math.abs(cur[k] - prev[k]))} vs last month)` : ''}`;
+  return [line('income', 'Income'), line('expenses', 'Expenses'), line('saved', 'Saved'), line('remaining', 'Left over')];
+}
+// Next month's plan: recurring lines carried forward, this-month-only lines dropped, "next month" items added as once-off.
+export function carryForward(lines, nextItems = []) {
+  return lines.filter((l) => !l.oneMonth).map((l) => ({ ...l, cents: l.id === 'extra' || l.kind === 'once' ? 0 : l.cents })).concat(nextItems.map((n, i) => ({ id: 'c-next' + i + Date.now().toString(36), name: n.name, kind: 'once', cents: n.amount })));
 }
