@@ -1,12 +1,16 @@
 {
   "name": "anna-web",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Anna Web: independent PWA edition of Anna for iPhone Safari. Separate from Anna Native.",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/logic.test.mjs",
+    "test": "node --test test/logic.test.mjs test/ai.test.mjs",
     "build": "node scripts/build.mjs",
     "serve": "npx --yes http-server _site -p 8080 -c-1"
+  },
+  "dependencies": {
+    "@wllama/wllama": "3.5.1",
+    "@wllama/wllama-compat": "3.5.1"
   }
 }

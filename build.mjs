@@ -1,7 +1,21 @@
-// Copies ONLY the public web files into _site/. Nothing from anna-native is ever included.
-import { cpSync, rmSync, mkdirSync } from 'node:fs';
-const FILES = ['index.html', 'app.js', 'logic.js', 'styles.css', 'sw.js', 'manifest.webmanifest'];
-rmSync('_site', { recursive: true, force: true }); mkdirSync('_site');
+// Builds _site/: ONLY Anna Web's public files + the AI engine files from node_modules. Nothing from anna-native.
+import { cpSync, rmSync, mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { join, relative, basename } from 'node:path';
+const FILES = ['index.html', 'app.js', 'ai.js', 'logic.js', 'styles.css', 'sw.js', 'manifest.webmanifest'];
+rmSync('_site', { recursive: true, force: true }); mkdirSync('_site/vendor', { recursive: true });
 for (const f of FILES) cpSync(f, `_site/${f}`);
 cpSync('icons', '_site/icons', { recursive: true });
-console.log('Built _site/ with', FILES.length, 'files + icons');
+const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+const missing = [], W = 'node_modules/@wllama/wllama/esm', C = 'node_modules/@wllama/wllama-compat/wasm';
+if (existsSync(W)) cpSync(W, '_site/vendor/wllama', { recursive: true }); else missing.push('@wllama/wllama (run npm install)');
+if (existsSync(C)) cpSync(C, '_site/vendor/wllama-compat/wasm', { recursive: true }); else missing.push('@wllama/wllama-compat (run npm install)');
+const all = existsSync('_site/vendor') ? walk('_site/vendor').map((p) => relative('_site', p).split('\\').join('/')) : [];
+const find = (dir, name, fixed) => (all.includes(fixed) ? fixed : all.find((p) => p.startsWith(dir) && basename(p) === name));
+const entry = find('vendor/wllama/', 'index.js', 'vendor/wllama/index.js'), wasm = find('vendor/wllama/', 'wllama.wasm', 'vendor/wllama/wasm/wllama.wasm');
+const cw = find('vendor/wllama-compat/', 'wllama.wasm', 'vendor/wllama-compat/wasm/wllama.wasm'), cj = find('vendor/wllama-compat/', 'wllama.js', 'vendor/wllama-compat/wasm/wllama.js');
+for (const [n, v] of [['wllama index.js', entry], ['wllama.wasm', wasm], ['compat wllama.wasm', cw], ['compat wllama.js', cj]]) if (!v) missing.push(n);
+const files = all.filter((p) => /\.(m?js|wasm)$/.test(p));
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+writeFileSync('_site/vendor/manifest.json', JSON.stringify({ app: pkg.version, engine: { ok: missing.length === 0, missing, entry, wasm, compat: { wasm: cw, worker: cj }, files } }, null, 1));
+console.log(`Built _site/ (${FILES.length} app files). AI engine: ${missing.length ? 'INCOMPLETE, missing ' + missing.join(', ') : files.length + ' files ready'}`);
+if (missing.length) console.warn('WARNING: the app will work, but the offline AI will report missing engine files.');

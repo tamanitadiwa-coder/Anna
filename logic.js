@@ -1,7 +1,7 @@
 // ANNA WEB — pure logic (no DOM). Same rules as ANNA NATIVE: money in whole cents, cash-basis business.
 export const SCHEMA = 1;
-export const emptyState = () => ({ app: 'anna-web', schema: SCHEMA, settings: { currency: '$' },
-  tasks: [], tx: [], bills: [], budgets: [], biz: [], mem: [] });
+export const emptyState = () => ({ app: 'anna-web', schema: SCHEMA, settings: { currency: '$', name: '' },
+  tasks: [], tx: [], bills: [], budgets: [], biz: [], mem: [], fb: [] });
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
 export function parseCents(s) {
@@ -48,5 +48,5 @@ export function validateBackup(text) {
   if (!Number.isInteger(d.schema) || d.schema > SCHEMA) return { ok: false, error: 'This backup is from a newer version of Anna Web.' };
   for (const k of ['tasks', 'tx', 'bills', 'budgets', 'biz', 'mem']) if (!Array.isArray(d[k])) return { ok: false, error: `Backup is damaged (missing "${k}").` };
   if (d.tx.concat(d.bills, d.budgets, d.biz).some((r) => !r || !Number.isSafeInteger(r.amount_cents ?? r.limit_cents))) return { ok: false, error: 'Backup is damaged (bad amounts).' };
-  return { ok: true, state: { ...emptyState(), ...d, settings: { currency: '$', ...(d.settings || {}) } } };
+  return { ok: true, state: { ...emptyState(), ...d, settings: { currency: '$', name: '', ...(d.settings || {}) }, fb: Array.isArray(d.fb) ? d.fb : [] } };
 }
