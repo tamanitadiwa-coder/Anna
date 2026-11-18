@@ -22,6 +22,7 @@ button:disabled{opacity:.4}
 <div class="bar"><i id="bar"></i></div>
 <div id="err"></div>
 <div id="chat"><div id="log"></div><textarea id="q" placeholder="Ask something…"></textarea><button id="send">Send</button></div>
+<script type="importmap">{"imports":{"onnxruntime-web/webgpu":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort.wasm.min.mjs","onnxruntime-common":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort.wasm.min.mjs"}}</script>
 <script type="module">
 const $ = (s) => document.querySelector(s), t0 = performance.now();
 const status = (s, p) => { $('#status').textContent = s + ` · ${((performance.now() - start) / 1000).toFixed(0)}s`; if (p != null) $('#bar').style.width = Math.round(p * 100) + '%'; };
@@ -50,9 +51,9 @@ const ENGINES = {
     return async (q, on) => { let out = ''; const s = await w.createChatCompletion({ messages: [{ role: 'user', content: q }], max_tokens: 200, stream: true }); for await (const c of s) { out += c.choices[0]?.delta?.content || ''; on(out); } return out; };
   },
   async tfjs() {
-    const T = await import('./tf/transformers.bundle.mjs');
+    const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.web.js');
     T.env.allowRemoteModels = true; T.env.allowLocalModels = false; T.env.useBrowserCache = true;
-    T.env.backends.onnx.wasm.wasmPaths = new URL('./tf/', location.href).href; T.env.backends.onnx.wasm.numThreads = 1; T.env.backends.onnx.wasm.proxy = false;
+    T.env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/'; T.env.backends.onnx.wasm.numThreads = 1; T.env.backends.onnx.wasm.proxy = false;
     const files = {}; const gen = await T.pipeline('text-generation', 'HuggingFaceTB/SmolLM2-360M-Instruct', { dtype: 'q4', device: 'wasm', revision: 'a10cc1512eabd3dde888204e902eca88bddb4951',
       progress_callback: (p) => { if (p.file && p.total) { files[p.file] = [p.loaded, p.total]; const l = Object.values(files).reduce((n, x) => n + x[0], 0), t = Object.values(files).reduce((n, x) => n + x[1], 0); status(`Downloading/loading ${p.file} · ${Math.round(l / 1e6)}/${Math.round(t / 1e6)} MB`, l / t); } else if (p.status) status('Transformers.js: ' + p.status + ' ' + (p.file || '')); } });
     return async (q, on) => { const out = await gen([{ role: 'user', content: q }], { max_new_tokens: 200, do_sample: false }); const txt = out[0].generated_text.at(-1).content; on(txt); return txt; };
