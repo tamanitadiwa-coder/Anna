@@ -1,0 +1,15 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import * as L from '../logic.js'; import { buildContext, buildMessages, friendly, MODEL } from '../ai.js';
+const T = new Date(2026, 10, 18, 12).getTime();
+const S = () => { const s = L.emptyState();
+  s.tasks.push({ title: 'Call accountant', due_at: T - 864e5, priority: 'high', completed: 0 }, { title: 'Done thing', completed: 1 });
+  s.tx.push({ kind: 'expense', amount_cents: 1234, category: 'Groceries', note: 'SECRET NOTE', occurred_at: T });
+  s.bills.push({ name: 'Rent', amount_cents: 90000, due_at: T + 864e5, paid: 0 });
+  s.biz.push({ kind: 'invoice', amount_cents: 5000, status: 'unpaid', description: 'Brand work', party: 'SECRET CLIENT', occurred_at: T });
+  s.mem.push({ content: 'Likes mornings', status: 'confirmed' }, { content: 'Guess only', status: 'assumption' }); return s; };
+test('nothing is shared by default', () => { const c = buildContext(S(), {}, T); assert.equal(c, 'Today: 2026-11-18'); });
+test('only enabled categories appear', () => { const c = buildContext(S(), { tasks: true }, T); assert.match(c, /Call accountant.*OVERDUE/); assert.doesNotMatch(c, /Groceries|Rent|Brand|mornings/); assert.doesNotMatch(c, /Done thing/); });
+test('notes and customer names are never included', () => { const c = buildContext(S(), { tasks: true, money: true, biz: true, mem: true }, T); assert.doesNotMatch(c, /SECRET/); assert.match(c, /\$12\.34|Groceries/); assert.match(c, /Brand work/); assert.match(c, /Likes mornings/); assert.doesNotMatch(c, /Guess only/); });
+test('messages are bounded and keep data out of user turn', () => { const m = buildMessages('x'.repeat(9000), Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'h' + i })), 'hi'); assert.equal(m[0].role, 'system'); assert.ok(m[0].content.length < 4100); assert.equal(m.length, 8); assert.equal(m.at(-1).content, 'hi'); });
+test('errors are explained honestly', () => { assert.match(friendly(new Error('RangeError: Array buffer allocation failed')), /Not enough memory/); assert.match(friendly(new Error('Failed to fetch')), /Network/); });
+test('model is a pinned GGUF url', () => { assert.match(MODEL.url, /^https:\/\/huggingface\.co\/.+\.gguf$/); });

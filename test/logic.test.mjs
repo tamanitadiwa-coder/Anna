@@ -22,3 +22,5 @@ test('backup validation', () => { const good = JSON.stringify(L.emptyState());
   assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), schema: 99 })).ok, false);
   assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tx: [{ amount_cents: 1.5 }] })).ok, false);
   assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tasks: undefined })).ok, false); });
+test('v0.1.0 backups still load (additive fields only)', () => { const old = { app: 'anna-web', schema: 1, settings: { currency: '€' }, tasks: [{ id: 'a', title: 'x' }], tx: [], bills: [], budgets: [], biz: [], mem: [] };
+  const r = L.validateBackup(JSON.stringify(old)); assert.equal(r.ok, true); assert.equal(r.state.settings.currency, '€'); assert.equal(r.state.settings.name, ''); assert.deepEqual(r.state.fb, []); assert.equal(r.state.tasks.length, 1); });
