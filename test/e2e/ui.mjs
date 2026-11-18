@@ -136,7 +136,7 @@ try {
   await page.click('#bizlist .grow >> text=Logo design'); await fill({ description: 'Logo design & brand guide' }); await submit(); s = await S(); R.ok(s.biz.some((r) => r.description === 'Logo design & brand guide'), 'edit business record');
   await page.click('#bizlist .item:has-text("Printer ink") [data-act="del"]'); s = await S(); R.ok(s.biz.length === 2, 'delete business record');
   // ---------- brain / memory ----------
-  await tabTo('brain');
+  await tabTo('brain'); R.ok(await page.locator('[data-act="bview"][data-id="journal"].on').count() === 1, 'Brain opens on the private Journal'); await page.click('[data-act="bview"][data-id="mem"]');
   await page.click('[data-act="open"][data-id="mem"]'); await fill({ content: 'My VAT number is in the blue folder', category: 'Work' }); await submit();
   await page.click('[data-act="open"][data-id="mem"]'); await fill({ content: 'Allergic to penicillin', category: 'Health' }); await submit();
   s = await S(); R.ok(s.mem.length === 2, 'save memories');
@@ -146,6 +146,7 @@ try {
   await page.click('#memlist .card:has-text("VAT") [data-act="fb-up"]'); s = await S(); R.ok(s.mem.find((m) => /VAT/.test(m.content)).helpful_count === 1 && s.fb.length === 1, 'memory feedback recorded');
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="fb-down"]'); s = await S(); R.ok(s.mem.find((m) => /amoxicillin/.test(m.content)).incorrect_count === 1, '"Not right" feedback recorded');
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="del"]'); s = await S(); R.ok(s.mem.length === 1, 'delete memory');
+  await page.click('[data-act="bview"][data-id="ai"]');
   const sw = page.locator('.swrow:has-text("Money") .sw'); const before = await sw.getAttribute('aria-checked'); await sw.click(); R.ok((await sw.getAttribute('aria-checked')) !== before, 'privacy switch toggles'); await page.locator('.swrow:has-text("Money") .sw').click();
   await page.click('details summary'); await layoutOk('brain with Advanced open');
   await page.click('[data-act="ctx-open"]'); const ctxText = await page.locator('#sheet pre').innerText(); R.ok(/Groceries/.test(ctxText) && /VAT number/.test(ctxText) && !/Mokoena/.test(ctxText) && !/Checkers/.test(ctxText), '"What Anna sees" shows data but never notes or customer names'); await page.click('#sheet [data-act="close"] >> nth=-1');
@@ -173,7 +174,7 @@ try {
   await page.fill('form[data-form="restorepw"] [name="pw"]', 'wrong-password-9'); await page.click('form[data-form="restorepw"] button'); await page.waitForTimeout(800); R.ok(/Wrong password/.test(await toastText()), 'encrypted backup with wrong password is refused');
   await page.fill('form[data-form="restorepw"] [name="pw"]', TEST_PW); await page.click('form[data-form="restorepw"] button'); await page.waitForSelector('#sheet [data-act="restore-confirm"]', { timeout: 5000 }).catch(() => {}); R.ok(/Restore this backup/.test(await page.locator('#sheet').innerText()) && /Backup/.test(await page.locator('#sheet .status').innerText()), 'restore shows a preview before overwriting');
   await page.click('[data-act="restore-confirm"]'); await page.waitForTimeout(300); R.ok(/Restored and verified/.test(await toastText()), 'restore completes and verifies what was saved', await toastText());
-  s = await S(); R.ok(JSON.stringify([s.tasks, s.tx, s.bills, s.budgets, s.biz, s.mem, s.reminders, s.chat]) === JSON.stringify([before2.tasks, before2.tx, before2.bills, before2.budgets, before2.biz, before2.mem, before2.reminders, before2.chat]), 'restored records are identical to the originals');
+  s = await S(); { const k = ['tasks', 'tx', 'bills', 'budgets', 'biz', 'mem', 'reminders', 'chat']; const diff = k.filter((x) => JSON.stringify(s[x]) !== JSON.stringify(before2[x])); R.ok(!diff.length, 'restored records are identical to the originals', diff.map((x) => x + ': ' + JSON.stringify(s[x]).slice(0, 120) + ' vs ' + JSON.stringify(before2[x]).slice(0, 120)).join(' ; ')); }
   R.ok(await page.locator('[data-act="undo-restore"]').count() === 1, 'undo-restore is offered');
   dialogs = []; await page.click('[data-act="undo-restore"]'); await page.waitForTimeout(400); s = await S(); R.ok(dialogs.length === 1 && s.tasks.length === 0, 'undo-restore puts back the pre-restore data (the erased state)');
   await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="undo-restore"]'); await page.waitForTimeout(400); s = await S(); R.ok(s.tasks.length === before2.tasks.length, 'undo again returns the restored data');
