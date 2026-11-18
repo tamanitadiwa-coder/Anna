@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><body>wllama 3.13 test<script type="module">
+import * as mod from './w13/wllama/esm/index.js';
+const abs = (p) => new URL(p, location.href).href; let w;
+window.__ask = async (q) => (await w.createChatCompletion({ messages: [{ role: 'user', content: q }], max_tokens: 40, temperature: 0.3 })).choices[0].message.content;
+window.__start = async () => { try {
+  window.__phase = 'fetch model'; const blob = await (await fetch('models/qwen.gguf')).blob();
+  window.__phase = 'load'; const stub = { isSupported: () => true, read: async () => null, write: async () => {}, getSize: async () => 0, list: async () => [], delete: async () => {} }; w = new mod.Wllama({ default: abs('./w13/wllama/esm/wasm/wllama.wasm') }, { logger: mod.LoggerWithoutDebug, cacheManager: new mod.CacheManager([stub]) });
+  w.setCompat({ wasm: abs('./w13/wllama-compat/wasm/wllama.wasm'), worker: abs('./w13/wllama-compat/wasm/wllama.js') });
+  await w.loadModel([blob], { n_ctx: 1536, n_batch: 128, n_gpu_layers: 0 });
+  window.__phase = 'generate'; const reply = await window.__ask('Reply with one short friendly greeting.');
+  window.__res = { reply, compat: w.getWorkerResources().compat };
+} catch (e) { window.__err = String(e); } };
+</script>

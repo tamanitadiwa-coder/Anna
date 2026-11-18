@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><script>
+window.__start = async () => { try { window.__phase = 'adapter'; const has = !!navigator.gpu; const a = has ? await navigator.gpu.requestAdapter() : null;
+  window.__err = 'navigator.gpu=' + has + ' adapter=' + (a ? (a.info?.vendor + '/' + a.info?.architecture + ' f16=' + a.features.has('shader-f16') + ' maxBuf=' + a.limits.maxBufferSize) : 'null'); } catch (e) { window.__err = 'ERR ' + e; } };
+</script>

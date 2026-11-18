@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><body>tf wasm<script type="module">
+import { pipeline, env } from './tf/transformers.bundle.mjs';
+env.allowRemoteModels = false; env.allowLocalModels = true; env.localModelPath = '/models/'; env.useBrowserCache = false;
+env.backends.onnx.wasm.wasmPaths = new URL('./tf/', location.href).href; env.backends.onnx.wasm.numThreads = 1; env.backends.onnx.wasm.proxy = false;
+let gen;
+window.__ask = async (q) => { const out = await gen([{ role: 'user', content: q }], { max_new_tokens: 40, do_sample: false }); return out[0].generated_text.at(-1).content; };
+window.__start = async () => { try {
+  window.__phase = 'load'; gen = await pipeline('text-generation', 'smol360', { dtype: 'q4', device: 'wasm', progress_callback: (p) => { if (p.status) window.__phase = 'load ' + p.status + ' ' + (p.file || '') + ' ' + (p.progress ? Math.round(p.progress) + '%' : ''); } });
+  window.__phase = 'generate'; const reply = await window.__ask('Reply with one short friendly greeting.');
+  window.__res = { reply };
+} catch (e) { window.__err = (String(e && e.message || e) + ' | ' + String(e && e.stack)).slice(0, 500); } };
+</script>
