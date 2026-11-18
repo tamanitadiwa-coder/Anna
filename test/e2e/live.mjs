@@ -8,7 +8,7 @@ const BASE = (process.env.ANNA_LIVE || 'https://tamanitadiwa-coder.github.io/Ann
 const R = reporter('live-site'), want = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url))).version;
 const man = JSON.parse(readFileSync(new URL('../../vendor/manifest.json', import.meta.url)));
 const get = async (p) => { try { const r = await fetch(BASE + p, { cache: 'no-store' }); return { ok: r.ok, status: r.status, type: r.headers.get('content-type') || '', buf: Buffer.from(await r.arrayBuffer()) }; } catch (e) { return { ok: false, status: String(e.cause?.code || e.message) }; } };
-for (const [p, t] of [['', 'text/html'], ['index.html', 'text/html'], ['app.js', 'javascript'], ['ai.js', 'javascript'], ['logic.js', 'javascript'], ['sha256.js', 'javascript'], ['styles.css', 'text/css'], ['sw.js', 'javascript'], ['manifest.webmanifest', ''], ['icons/apple-touch-icon.png', 'image/png'], ['vendor/manifest.json', 'json']]) {
+for (const [p, t] of [['', 'text/html'], ['index.html', 'text/html'], ['app.js', 'javascript'], ['ai.js', 'javascript'], ['logic.js', 'javascript'], ['router.js', 'javascript'], ['money.js', 'javascript'], ['styles.css', 'text/css'], ['sw.js', 'javascript'], ['manifest.webmanifest', ''], ['icons/apple-touch-icon.png', 'image/png'], ['vendor/manifest.json', 'json']]) {
   const r = await get(p); R.ok(r.ok && r.type.includes(t), `GET /${p} → ${r.status} ${r.type || ''}`.trim());
 }
 const app = await get('app.js'); const live = (app.buf?.toString().match(/VERSION = '([^']+)'/) || [])[1]; R.ok(live === want, `live app version is ${want}`, 'live: ' + live);
@@ -24,7 +24,7 @@ if (live === want) {
     await page.evaluate(() => navigator.serviceWorker.ready); await page.waitForFunction(async () => { const k = (await caches.keys()).find((x) => x.startsWith('anna-engine-')); return k && (await (await caches.open(k)).keys()).length === 4; }, null, { timeout: 120000, polling: 1000 }).then(() => R.ok(true, 'service worker cached the 4 AI engine files'), () => R.ok(false, 'service worker cached the 4 AI engine files'));
     await page.reload(); await ready(page); await ctx.setOffline(true); await page.reload().catch(() => {});
     R.ok(await ready(page, 20000).then(() => true, () => false), 'live app reloads with the internet off');
-    const d = await page.evaluate(() => window.__anna.runDiagnostics()); R.ok(/AI engine cache wllama/.test(d), 'diagnostics on the live site', d.split('\n').find((l) => l.startsWith('Offline app files')));
+    const d = await page.evaluate(() => window.__anna.runDiagnostics()); R.ok(/Offline app files/.test(d), 'diagnostics on the live site', d.split('\n').find((l) => l.startsWith('Offline app files')));
   }
   R.ok(!errs.length, 'no JavaScript errors on the live site', errs.join(' | ')); await b.close();
 }

@@ -1,7 +1,6 @@
 import test from 'node:test'; import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as L from '../logic.js'; import { buildContext, buildMessages, friendly, MODEL, relevantMemories, systemPrompt } from '../ai.js';
-import { Sha256, sha256Blob } from '../sha256.js';
 const T = new Date(2026, 10, 18, 12).getTime();
 const S = () => { const s = L.emptyState();
   s.tasks.push({ title: 'Call accountant', due_at: T - 864e5, priority: 'high', completed: 0 }, { title: 'Done thing', completed: 1 });
@@ -20,8 +19,3 @@ test('failed chat turns are not replayed to the model', () => { const m = buildM
 test('system prompt is honest about data and currency', () => { assert.match(systemPrompt('R'), /South African rand/); assert.match(systemPrompt('R'), /Jamal/); assert.match(systemPrompt('R'), /never say "as a language model"/); assert.match(systemPrompt('R'), /Never invent numbers/); assert.match(systemPrompt('€'), /€/); });
 test('errors are explained honestly', () => { assert.match(friendly(new Error('RangeError: Array buffer allocation failed')), /short of memory/); assert.match(friendly(new Error('Failed to fetch')), /internet connection/); assert.match(friendly(new Error('QuotaExceededError')), /storage/); assert.equal(friendly(Object.assign(new Error('x'), { name: 'AbortError' })), 'Cancelled.'); });
 test('model is Qwen2.5 0.5B on WebLLM', () => { assert.equal(MODEL.engine, 'WebLLM'); assert.match(MODEL.name, /Qwen2\.5 0\.5B/); assert.ok(MODEL.bytes > 2e8 && MODEL.bytes < 4e8); });
-test('streaming SHA-256 matches Node crypto for awkward sizes', async () => {
-  for (const n of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000, 100003]) { const d = new Uint8Array(n).map((_, i) => (i * 31 + 7) & 255), want = createHash('sha256').update(d).digest('hex');
-    assert.equal(new Sha256().update(d).hex(), want, 'one shot ' + n); const s = new Sha256(); for (let i = 0; i < n; i += 13) s.update(d.subarray(i, i + 13)); assert.equal(s.hex(), want, 'pieces ' + n);
-    assert.equal(await sha256Blob(new Blob([d]), null, { chunk: 4099 }), want, 'blob ' + n); } });
-test('SHA-256 known vectors', () => { assert.equal(new Sha256().update(new TextEncoder().encode('abc')).hex(), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'); assert.equal(new Sha256().hex(), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'); });

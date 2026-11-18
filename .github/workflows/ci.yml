@@ -30,11 +30,8 @@ jobs:
         run: npm run build
       - name: Install Playwright (Chromium)
         run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
-      - name: UI end-to-end (iPhone 15 emulation and desktop)
-        run: node test/e2e/ui.mjs && node test/e2e/ui.mjs desktop
-      - name: Real-model AI test (downloads the 398 MB model from Hugging Face; manual runs only)
-        if: github.event_name == 'workflow_dispatch'
-        run: ANNA_REAL_HF=1 node test/e2e/ai-real.mjs --safari-engine
+      - name: Browser end-to-end (all suites)
+        run: npm run e2e
       - uses: actions/upload-artifact@v4
         if: always()
         with:

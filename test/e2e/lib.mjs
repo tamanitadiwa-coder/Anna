@@ -16,8 +16,6 @@ export function reporter(name) {
   };
   return r;
 }
-// Hide JSPI so wllama takes its Safari (compat) path even in Chromium.
-export const SAFARI_ENGINE = () => { try { delete WebAssembly.Suspending; delete WebAssembly.promising; } catch {} };
 // Waits for Anna to start, then passes the owner lock: creates the test password on a fresh profile, otherwise unlocks.
 export const TEST_PW = 'anna-test-pass-1';
 export async function ready(page, timeout = 30000) {
