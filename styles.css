@@ -193,3 +193,7 @@ img,svg{-webkit-user-drag:none;-webkit-touch-callout:none}
 .moodopt input:focus-visible+span{outline:2px solid rgba(117,207,255,.6)}
 .checkin{display:flex;align-items:center;gap:4px;margin-top:6px}.checkin .link{color:var(--ice);text-decoration:none;font-size:15px}
 #sheet .chips{flex-wrap:wrap;overflow:visible;margin:0;padding:2px 0}
+/* money tools */
+.bline{display:grid;grid-template-columns:1fr 112px 44px;gap:8px;align-items:center;margin:0 0 8px}.bline input{min-height:44px;padding:10px 12px}
+.bline input[data-bl="amt"]{text-align:right}input.bad{outline-color:rgba(255,156,143,.7)}
+.calcres{font:300 24px/1.25 var(--brand);color:var(--soft);overflow-wrap:anywhere}
