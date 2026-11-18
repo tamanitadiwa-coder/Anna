@@ -6,6 +6,7 @@ import * as A from './auth.js';
 import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
+import * as RT from './router.js';
 export const VERSION = '0.10.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,7 +27,7 @@ async function kvSet(k, v) {
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
 let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
-let pendingEntry = null, entryUndo = {}, BK = null;
+let pendingEntry = null, entryUndo = {}, BK = null, lastRoute = 'qwen';
 let bizView = 'overview', staffWeek = 0, calcTab = 'basic', CALC = {}, BD = null, AFF = { amount: '', what: '' };
 let pendingReminder = null, reminderPrefill = null, lastURL = '';
 let LIFE = LF.emptyLife(), brainView = 'journal', jQ = '', jTag = '', pendingRemember = null, checkinShown = false;
@@ -202,6 +203,7 @@ const screens = {
         <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="lock">Lock now</button><button class="btn sage sm" data-act="open" data-id="chpw">Change password</button></div></div>
       <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
         <div class="row wrap"><button class="btn sm" data-act="logo-pick">${logoUrl ? 'Replace logo…' : 'Upload logo…'}</button>${logoUrl ? '<button class="btn sage sm" data-act="logo-reset">Reset to default</button>' : ''}</div><input id="logofile" type="file" accept="image/*" hidden></div>
+      <div class="card"><h2>Web research</h2><div class="mute" style="margin:4px 0 8px">Not switched on. Questions about news, weather or other current events need a web search service you approve first. Until then ANNA says so and never guesses. Nothing leaves this device.</div><div class="mute">Options waiting for your approval:<br>• Tavily: 1,000 searches a month free, then about $0.008 each. Needs a Tavily API key.<br>• Brave Search API: about $5 per 1,000 searches, with a $5 monthly credit. Needs a Brave API key and a card on file.</div></div>
       <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
         <div class="row"><button class="btn grow" data-act="export">Export backup</button><button class="btn sage grow" data-act="import">Restore…</button></div><input id="file" type="file" accept="application/json,.json" hidden>
         ${hasPrev ? '<button class="link" data-act="undo-restore">Undo last restore / erase</button>' : ''}<div class="mute" style="margin-top:8px">${esc(L.describeCounts(L.counts(S)))}</div></div>
@@ -300,17 +302,48 @@ const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.
 // Tools first (exact answers from code, work without the AI): reminders, clock, dates, public holidays.
 function toolReply(text) {
   if (pendingReminder && !pendingReminder.ts) { const w = TM.parseWhen(text); if (w?.hasDate || w?.hasTime) { pendingReminder = { ...pendingReminder, ts: w.ts, hasTime: w.hasTime, repeat: w.repeat !== 'none' ? w.repeat : pendingReminder.repeat }; return reminderAsk(); } }
+  lastRoute = pendingReminder ? 'reminders' : 'finance';
   if (BK) { const r = booksAnswer(text); if (r) return r; }
   if (/^\s*(start )?books day\s*$/i.test(text)) { BK = { step: 0, month: M.booksMonth() }; setTimeout(() => booksAsk(), 0); return 'Let’s close the month.'; }
+  lastRoute = RT.route(text);
+  if (lastRoute === 'memory') return memoryReply(text);
+  if (lastRoute === 'journal') return journalReply(text);
+  if (lastRoute === 'research') return RT.researchReply(text, { online: navigator.onLine, service: prefOf('research') });
   const d = TM.parseReminder(text);
   if (d) { pendingReminder = d; if (!d.title) { pendingReminder = null; return 'What should I remind you about? For example: “Remind me to call Mom tomorrow at 3pm”.'; } if (!d.ts) return `When should I remind you to “${d.title}”? For example: tomorrow at 9am, next Friday, or in 2 hours.`; if (d.ts <= Date.now()) { pendingReminder = { ...d, ts: null }; return 'That time has already passed. When should I remind you instead?'; } return reminderAsk(); }
   const t = TM.answerTime(text); return t || moneyReply(text) || entryReply(text) || '';
+}
+// Tool first, then Qwen phrases it (spec §6). The exact answer is shown at once; Qwen's wording replaces it only if
+// every number survives (router.acceptPhrase). Otherwise the exact answer stays as it is.
+async function phrase(msg, question) {
+  const facts = msg.content;
+  try { const out = await AI.ask(RT.phraseMessages(AI.systemPrompt(cur()), question, facts), null, { maxTokens: 90 }); const ok = RT.acceptPhrase(facts, out); if (ok) { msg.content = ok; msg.facts = facts; } } catch {}
+  paintChat(true); await save();
+}
+// "What did I tell you about…" → saved memories only. Never invented.
+function memoryReply(text) {
+  const mem = S.mem.filter((m) => m.status !== 'assumption'), topic = (text.match(/\b(?:about|remember)\s+(.+?)[?.!]*$/i)?.[1] || '').replace(/^(?:me|myself|that)$/i, '').trim();
+  if (!mem.length) return 'You haven’t asked me to remember anything yet. When you tell me something worth keeping, I’ll ask before saving it.';
+  const hits = topic ? LF.relevant(mem, [], topic, 5).filter((x) => x.s > 0).map((x) => x.text) : [...mem].sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, 5).map((m) => m.content);
+  if (!hits.length) return `I don’t have anything saved about ${topic}. If you tell me, I’ll ask before I remember it.`;
+  return `Here’s what you told me${topic ? ` about ${topic}` : ''}:\n` + hits.map((x) => '• ' + x).join('\n');
+}
+// "How did I feel…" → moods from the journal for that period (counts and averages from code; entry text stays private).
+function journalReply(text) {
+  const t = text.toLowerCase(), now = new Date(), y = now.getFullYear(), mo = now.getMonth(), sod = new Date(y, mo, now.getDate()).getTime(), day = 864e5, wk = LF.startOfWeek();
+  const [from, to, label] = /yesterday/.test(t) ? [sod - day, sod - 1, 'yesterday'] : /today/.test(t) ? [sod, sod + day - 1, 'today'] : /last week/.test(t) ? [wk - 7 * day, wk - 1, 'last week'] : /this week/.test(t) ? [wk, sod + day - 1, 'this week'] : /last month/.test(t) ? [new Date(y, mo - 1, 1).getTime(), new Date(y, mo, 1).getTime() - 1, 'last month'] : /this month/.test(t) ? [new Date(y, mo, 1).getTime(), sod + day - 1, 'this month'] : [sod - 6 * day, sod + day - 1, 'the last 7 days'];
+  const es = LIFE.journal.filter((e) => { const x = new Date(e.date + 'T12:00:00').getTime(); return x >= from && x <= to; }).sort((a, b) => (a.date < b.date ? 1 : -1)), md = es.filter((e) => e.mood);
+  if (!es.length) return `You didn’t write any journal entries for ${label}, so I can’t say how you felt. I only go by what you wrote.`;
+  if (!md.length) return `You wrote ${es.length} journal ${es.length === 1 ? 'entry' : 'entries'} for ${label}, but none had a mood picked, so I can’t say how you felt.`;
+  const name = (v) => LF.MOODS.find(([k]) => k === v)[1].toLowerCase(), avg = md.reduce((a, e) => a + e.mood, 0) / md.length, avgS = (Math.round(avg * 10) / 10).toString().replace('.', ',');
+  return [`From your journal for ${label} (${es.length} ${es.length === 1 ? 'entry' : 'entries'}, ${md.length} with a mood):`, ...md.slice(0, 7).map((e) => `• ${dstr(new Date(e.date + 'T12:00:00').getTime())}: ${name(e.mood)}`), `Average mood: ${avgS} out of 5 (${name(Math.round(avg))}).`].join('\n');
 }
 const reminderAsk = () => { const d = pendingReminder; return `Shall I remind you to “${d.title}” on ${TM.fmtDateTime(d.ts)}${d.repeat && d.repeat !== 'none' ? ', repeating ' + ({ daily: 'every day', weekly: 'every week', monthly: 'every month' }[d.repeat]) : ''}${d.hasTime === false ? ' (I picked 09:00, change it if you like)' : ''}?`; };
 async function sendChat(text, opts) {
   text = text.trim(); if (!text || AI.ai.busy) return;
   const tool = toolReply(text);
-  if (tool) { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: tool, at: Date.now(), tool: pendingReminder ? 'reminders' : 'clock' }); pendingRemember = null; paintChat(true); await save(); return; }
+  if (tool) { const tag = pendingReminder ? 'reminders' : pendingEntry ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
+    if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingReminder && !BK) await phrase(msg, text); return; }
   if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
@@ -837,7 +870,7 @@ function moneyReply(text) {
   if ((m = t.match(/(\d[\d\s,.]*)\s*(?:%|percent)\s+of\s+r?\s?(\d[\d\s,.]*)/))) { const r = M.percentOf(M.evaluate(m[1]).toFixed(), M.evaluate(m[2]).toFixed()); return `${M.fmtNum(r.result)}\n${r.steps.join('\n')}`; }
   if (/\bvat\b/.test(t) && amount > 0) { const remove = /\b(remove|minus|take off|exclud\w*|excl|without|out of|from|inclusive|incl\.? price)\b/.test(t); M.setCurrency(curCode()); const r = M.vat(amount, remove ? 'remove' : 'add'); return `${M.money(r.excl)} excl. VAT · ${M.money(r.vat)} VAT · ${M.money(r.incl)} incl. VAT\n${r.steps.join('\n')}`; }
   if (/\b(how much (money )?(is |do i have )?left|my (monthly )?budget|money left this month|remaining this month)\b/.test(t)) { const b = budgetFor(monthNow()); if (!b) return 'You haven’t saved a monthly budget for this month yet. Open Money → Monthly calculator, fill it in and tap Save. I won’t guess the numbers.'; M.setCurrency(b.currency); return `${monthName(monthNow())}: ${M.money(b.remaining)} left after ${M.money(b.expenses)} expenses and ${M.money(b.savings)} savings (income ${M.money(b.income)}).\nThat is ${M.money(b.weekly)} a week or ${M.money(b.daily)} a day (${b.days}-day month).`; }
-  if (/\bhow many hours\b|\b(wages?|overtime)\b.*\b(staff|this week|team)\b|\bstaff\b.*\b(hours|wages)\b/.test(t)) { const people = LIFE.staff.filter((x) => x.type === 'person'); if (!people.length) return 'You haven’t added any staff yet (Business → Staff).'; M.setCurrency(curCode()); const ts = M.timesheet(people, LIFE.staff.filter((x) => x.type === 'shift'), Date.now(), { isSpecialDay }); const named = ts.filter((x) => t.includes(x.name.toLowerCase())), list = named.length ? named : ts;
+  if (lastRoute === 'staff' || /\bhow many hours\b|\b(wages?|overtime)\b.*\b(staff|this week|team)\b|\bstaff\b.*\b(hours|wages)\b/.test(t)) { const people = LIFE.staff.filter((x) => x.type === 'person'); if (!people.length) return 'You haven’t added any staff yet (Business → Staff).'; M.setCurrency(curCode()); const ts = M.timesheet(people, LIFE.staff.filter((x) => x.type === 'shift'), Date.now(), { isSpecialDay }); const named = ts.filter((x) => t.includes(x.name.toLowerCase())), list = named.length ? named : ts;
     return 'This week (from the shifts you entered):\n' + list.map((x) => `${x.name}: ${M.fmtNum(x.hours)} h${x.overtime ? ` (${M.fmtNum(x.overtime)} h overtime)` : ''}, ${x.pay !== null ? 'wages ' + M.money(x.pay) : 'no hourly rate entered'}`).join('\n'); }
   const ex = text.replace(/^(what(?:'s| is)|calculate|calc|work out|how much is)\s+/i, '').replace(/[?=]\s*$/, '').trim();
   if (/[\d)]\s*[-+*/x×÷^%]\s*[\d(]|\d\s*%\s*$/.test(ex) && /^[\s\dR.,+\-*/x×÷^()%]+$/i.test(ex)) { try { const v = M.evaluate(ex); return `${M.fmtNum(v, 6)}\n${ex} = ${M.fmtNum(v, 6)} (calculated exactly)`; } catch (e) { return e.message; } }

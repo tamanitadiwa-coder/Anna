@@ -1,7 +1,7 @@
 // Builds _site/: exactly the files the browser needs (app + icons + vendored AI engine). Used for tests and the production ZIP.
 // The repository root itself is also a valid site (GitHub Pages "deploy from branch"); _site/ is the clean version of it.
 import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-export const APP = ['index.html', 'app.js', 'ai.js', 'logic.js', 'sha256.js', 'auth.js', 'life.js', 'time.js', 'money.js', 'styles.css', 'sw.js', 'manifest.webmanifest', '.nojekyll', '404.html'];
+export const APP = ['index.html', 'app.js', 'ai.js', 'logic.js', 'sha256.js', 'auth.js', 'life.js', 'time.js', 'money.js', 'router.js', 'styles.css', 'sw.js', 'manifest.webmanifest', '.nojekyll', '404.html'];
 const pkg = JSON.parse(readFileSync('package.json', 'utf8')), man = JSON.parse(readFileSync('vendor/manifest.json', 'utf8'));
 const missing = [...APP, 'icons', 'fonts/jost.woff2', 'vendor/manifest.json', ...man.engine.files].filter((f) => !existsSync(f));
 if (missing.length) { console.error('Cannot build, missing:', missing.join(', ')); process.exit(1); }
