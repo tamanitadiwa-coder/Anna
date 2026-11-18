@@ -1,0 +1,27 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import * as L from '../logic.js'; import { buildContext, buildMessages, friendly, MODEL, relevantMemories, systemPrompt } from '../ai.js';
+import { Sha256, sha256Blob } from '../sha256.js';
+const T = new Date(2026, 10, 18, 12).getTime();
+const S = () => { const s = L.emptyState();
+  s.tasks.push({ title: 'Call accountant', due_at: T - 864e5, priority: 'high', completed: 0 }, { title: 'Done thing', completed: 1 });
+  s.reminders.push({ id: 'r', title: 'Collect parcel', at: T + 36e5, done: 0 });
+  s.tx.push({ kind: 'expense', amount_cents: 1234, category: 'Groceries', note: 'SECRET NOTE', occurred_at: T });
+  s.bills.push({ name: 'Rent', amount_cents: 900000, due_at: T + 864e5, paid: 0 });
+  s.biz.push({ kind: 'invoice', amount_cents: 5000, status: 'unpaid', description: 'Brand work', party: 'SECRET CLIENT', occurred_at: T });
+  s.mem.push({ content: 'Likes mornings', status: 'confirmed', category: 'Personal' }, { content: 'Guess only', status: 'assumption', category: 'General' }); return s; };
+test('nothing is shared when every category is off', () => { const c = buildContext(S(), {}, T); assert.match(c, /^Today: 2026-11-18/); assert.equal(c.split('\n').length, 1); });
+test('only enabled categories appear', () => { const c = buildContext(S(), { tasks: true }, T); assert.match(c, /Call accountant.*OVERDUE/); assert.match(c, /Collect parcel/); assert.doesNotMatch(c, /Groceries|Rent|Brand|mornings/); assert.doesNotMatch(c, /Done thing/); });
+test('notes and customer names are never included; amounts in rand', () => { const c = buildContext(S(), { tasks: true, money: true, biz: true, mem: true }, T); assert.doesNotMatch(c, /SECRET/); assert.match(c, /R 12,34 Groceries/); assert.match(c, /Rent R 9 000,00/); assert.match(c, /Brand work/); assert.match(c, /Likes mornings/); assert.doesNotMatch(c, /Guess only/); });
+test('relevant memories come first', () => { const mem = [{ content: 'Gym on Tuesdays', status: 'confirmed', created_at: 3 }, { content: 'VAT number is in the blue folder', status: 'confirmed', created_at: 1 }, { content: 'Allergic to nuts', status: 'confirmed', created_at: 2 }];
+  assert.equal(relevantMemories(mem, 'where is my VAT number?', 1)[0].content, 'VAT number is in the blue folder'); assert.equal(relevantMemories(mem, '', 1)[0].content, 'Gym on Tuesdays'); });
+test('messages are bounded and keep data out of the user turn', () => { const m = buildMessages('x'.repeat(9000), Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'h' + i })), 'hi'); assert.equal(m[0].role, 'system'); assert.ok(m[0].content.length < 3400); assert.equal(m.length, 8); assert.equal(m.at(-1).content, 'hi'); assert.ok(!m.slice(1).some((x) => x.content.includes('xxx'))); });
+test('failed chat turns are not replayed to the model', () => { const m = buildMessages('', [{ role: 'user', content: 'q' }, { role: 'assistant', content: '', error: 'boom' }], 'next'); assert.deepEqual(m.slice(1).map((x) => x.content), ['q', 'next']); });
+test('system prompt is honest about data and currency', () => { assert.match(systemPrompt('R'), /South African rand/); assert.match(systemPrompt('R'), /Never invent numbers/); assert.match(systemPrompt('€'), /€/); });
+test('errors are explained honestly', () => { assert.match(friendly(new Error('RangeError: Array buffer allocation failed')), /Not enough memory/); assert.match(friendly(new Error('Failed to fetch')), /Network/); assert.match(friendly(new Error('QuotaExceededError')), /storage/); assert.equal(friendly(Object.assign(new Error('x'), { name: 'AbortError' })), 'Cancelled.'); });
+test('model is pinned to an exact Hugging Face commit with a checksum', () => { assert.match(MODEL.url, /^https:\/\/huggingface\.co\/bartowski\/Qwen2\.5-0\.5B-Instruct-GGUF\/resolve\/[0-9a-f]{40}\/Qwen2\.5-0\.5B-Instruct-Q4_K_M\.gguf$/); assert.match(MODEL.sha256, /^[0-9a-f]{64}$/); assert.equal(MODEL.bytes, 397808192); });
+test('streaming SHA-256 matches Node crypto for awkward sizes', async () => {
+  for (const n of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000, 100003]) { const d = new Uint8Array(n).map((_, i) => (i * 31 + 7) & 255), want = createHash('sha256').update(d).digest('hex');
+    assert.equal(new Sha256().update(d).hex(), want, 'one shot ' + n); const s = new Sha256(); for (let i = 0; i < n; i += 13) s.update(d.subarray(i, i + 13)); assert.equal(s.hex(), want, 'pieces ' + n);
+    assert.equal(await sha256Blob(new Blob([d]), null, { chunk: 4099 }), want, 'blob ' + n); } });
+test('SHA-256 known vectors', () => { assert.equal(new Sha256().update(new TextEncoder().encode('abc')).hex(), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'); assert.equal(new Sha256().hex(), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'); });

@@ -1,0 +1,58 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import * as L from '../logic.js';
+const T = new Date(2026, 10, 18, 12).getTime();
+test('parseCents', () => { assert.equal(L.parseCents('12.5'), 1250); assert.equal(L.parseCents('1,000'), 100000); assert.equal(L.parseCents('0.1'), 10); assert.equal(L.parseCents('abc'), null); assert.equal(L.parseCents('0'), null); assert.equal(L.parseCents('1.234'), null); });
+test('month summary & budgets', () => { const s = L.emptyState();
+  s.tx.push({ kind: 'income', amount_cents: 5000, category: 'Pay', occurred_at: T }, { kind: 'expense', amount_cents: 1200, category: 'Food', occurred_at: T }, { kind: 'expense', amount_cents: 999, category: 'Food', occurred_at: new Date(2026, 9, 3).getTime() });
+  s.budgets.push({ category: 'food', limit_cents: 1000 });
+  assert.deepEqual(L.monthSummary(s, T), { income: 5000, expense: 1200, net: 3800 });
+  const b = L.budgetStatus(s, T)[0]; assert.equal(b.spent, 1200); assert.equal(b.over, true); });
+test('bills roll monthly and record expense', () => { const s = L.emptyState(); const d = new Date(2026, 0, 31, 12).getTime();
+  s.bills.push({ id: 'a', name: 'Rent', amount_cents: 100, due_at: d, repeat_monthly: 1, paid: 0 }, { id: 'b', name: 'Once', amount_cents: 50, due_at: d, repeat_monthly: 0, paid: 0 });
+  L.payBill(s, 'a', { now: T }); L.payBill(s, 'b', { recordExpense: false, now: T });
+  assert.equal(new Date(s.bills[0].due_at).getMonth(), 1); assert.equal(new Date(s.bills[0].due_at).getDate(), 28);
+  assert.equal(s.bills[1].paid, 1); assert.equal(s.tx.length, 1); });
+test('business is cash basis', () => { const s = L.emptyState();
+  s.biz.push({ kind: 'sale', amount_cents: 1000, status: 'paid', occurred_at: T }, { kind: 'invoice', amount_cents: 500, status: 'unpaid', occurred_at: T, paid_at: null },
+    { kind: 'invoice', amount_cents: 700, status: 'paid', occurred_at: new Date(2026, 8, 1).getTime(), paid_at: T }, { kind: 'expense', amount_cents: 300, status: 'paid', occurred_at: T });
+  assert.deepEqual(L.businessSummary(s, T), { revenue: 1700, expenses: 300, profit: 1400, unpaid: 500 }); });
+test('backup validation', () => { const good = JSON.stringify(L.emptyState());
+  assert.equal(L.validateBackup(good).ok, true); assert.equal(L.validateBackup('{').ok, false);
+  assert.equal(L.validateBackup('{"app":"x"}').ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), schema: 99 })).ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tx: [{ amount_cents: 1.5 }] })).ok, false);
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), tasks: undefined })).ok, false); });
+test('v0.1.0 backups still load (additive fields only)', () => { const old = { app: 'anna-web', schema: 1, settings: { currency: '€' }, tasks: [{ id: 'a', title: 'x' }], tx: [], bills: [], budgets: [], biz: [], mem: [] };
+  const r = L.validateBackup(JSON.stringify(old)); assert.equal(r.ok, true); assert.equal(r.state.settings.currency, '€'); assert.equal(r.state.settings.name, ''); assert.deepEqual(r.state.fb, []); assert.equal(r.state.tasks.length, 1); });
+// ---- v0.4.0 ----
+test('ZAR is the default currency and is formatted the South African way', () => {
+  assert.equal(L.emptyState().settings.currency, 'R'); assert.equal(L.fmt(123456), 'R 1 234,56'); assert.equal(L.fmt(-5000, 'R'), '-R 50,00'); assert.equal(L.fmt(123456, '$'), '$1,234.56');
+  assert.equal(L.validateBackup(JSON.stringify({ ...L.emptyState(), settings: {} })).state.settings.currency, 'R'); });
+test('parseCents accepts comma decimals, spaces and a currency prefix', () => {
+  for (const [s, c] of [['12,50', 1250], ['12,5', 1250], ['R 1 234,56', 123456], ['1 234.56', 123456], ['1,234.56', 123456], ['1.234,56', 123456], ['R150', 15000], ['1,000,000', 100000000], ['0.5', 50], ['1.234', null]]) assert.equal(L.parseCents(s), c, s);
+  for (const s of ['', '-5', '12,345,6', '1.2.3', 'R', '0,00', '12.', '1,23,456', '12.345.67']) assert.equal(L.parseCents(s), null, s); });
+test('date helpers round-trip', () => { const t = L.dateTimeTs('2026-11-18', '14:30'); assert.equal(L.tsToDay(t), '2026-11-18'); assert.equal(L.tsToTime(t), '14:30'); assert.equal(L.dateTimeTs('', '10:00'), null); assert.equal(L.centsToInput(1250), '12.50'); });
+test('reminders: due, complete, repeat, snooze', () => { const s = L.emptyState();
+  s.reminders.push({ id: 'a', title: 'Once', at: T - 6e4, repeat: 'none', done: 0, notified: 0 }, { id: 'b', title: 'Daily', at: T - 3 * 864e5, repeat: 'daily', done: 0, notified: 0 }, { id: 'c', title: 'Later', at: T + 36e5, repeat: 'none', done: 0 });
+  assert.deepEqual(L.dueReminders(s, T).map((r) => r.id).sort(), ['a', 'b']);
+  L.completeReminder(s, 'a', T); assert.equal(s.reminders[0].done, 1);
+  L.completeReminder(s, 'b', T); assert.equal(s.reminders[1].done, 0); assert.ok(s.reminders[1].at > T && s.reminders[1].at <= T + 864e5); assert.equal(s.reminders[1].notified, 0);
+  L.completeReminder(s, 'a', T); assert.equal(s.reminders[0].done, 0, 'tapping again un-completes');
+  L.snoozeReminder(s, 'c', 10, T); assert.equal(s.reminders[2].at, T + 6e5);
+  assert.deepEqual(L.pendingReminders(s).map((r) => r.id), ['a', 'c', 'b']); });
+test('monthly reminder keeps the day of month', () => { const s = L.emptyState(), at = new Date(2026, 0, 31, 9).getTime(); s.reminders.push({ id: 'm', title: 'Rent', at, repeat: 'monthly', done: 0 });
+  L.completeReminder(s, 'm', at + 1000); const d = new Date(s.reminders[0].at); assert.equal(d.getMonth(), 1); assert.equal(d.getDate(), 28); assert.equal(d.getHours(), 9); });
+test('reminder .ics file is valid iCalendar with an alarm', () => { const ics = L.reminderICS({ id: 'x1', title: 'Pay, rent; now', at: Date.UTC(2026, 10, 20, 7, 0), repeat: 'weekly', notes: 'line1\nline2' }, Date.UTC(2026, 10, 18));
+  assert.match(ics, /^BEGIN:VCALENDAR\r\n/); assert.match(ics, /DTSTART:20261120T070000Z/); assert.ok(ics.includes('SUMMARY:Pay\\, rent\\; now')); assert.match(ics, /RRULE:FREQ=WEEKLY/); assert.match(ics, /BEGIN:VALARM\r\nACTION:DISPLAY/); assert.match(ics, /DESCRIPTION:line1\\nline2/); assert.match(ics, /END:VCALENDAR\r\n$/); });
+test('bills: monthly keeps last-paid date; unpay works', () => { const s = L.emptyState(); s.bills.push({ id: 'a', name: 'X', amount_cents: 100, due_at: T, repeat_monthly: 0, paid: 0 });
+  L.payBill(s, 'a', { now: T }); assert.equal(s.bills[0].paid, 1); L.unpayBill(s, 'a'); assert.equal(s.bills[0].paid, 0); assert.equal(s.bills[0].paid_at, null); });
+test('spending breakdown by category', () => { const s = L.emptyState(); s.tx.push({ kind: 'expense', amount_cents: 100, category: 'A', occurred_at: T }, { kind: 'expense', amount_cents: 300, category: 'B', occurred_at: T }, { kind: 'expense', amount_cents: 50, category: 'A', occurred_at: T }, { kind: 'income', amount_cents: 999, category: 'A', occurred_at: T });
+  assert.deepEqual(L.spendingByCategory(s, T), [['B', 300], ['A', 150]]); });
+test('business search matches words in any field', () => { const s = L.emptyState(); s.biz.push({ id: '1', kind: 'sale', description: 'Logo design', party: 'Thandi Bakery', amount_cents: 150000, status: 'paid', occurred_at: T }, { id: '2', kind: 'expense', description: 'Printer ink', party: null, amount_cents: 45000, status: 'paid', occurred_at: T - 1 });
+  assert.deepEqual(L.searchBiz(s, 'bakery').map((r) => r.id), ['1']); assert.deepEqual(L.searchBiz(s, 'ink expense').map((r) => r.id), ['2']); assert.deepEqual(L.searchBiz(s, '450').map((r) => r.id), ['2']); assert.equal(L.searchBiz(s, '').length, 2); assert.equal(L.searchBiz(s, 'nothing').length, 0); });
+test('backups carry reminders and chat; bad ones are rejected', () => { const s = L.emptyState(); s.reminders.push({ id: 'r', title: 'x', at: T }); s.chat.push({ role: 'user', content: 'hi' }, { role: 'system', content: 'drop me' }, { role: 'assistant', content: 'hello' });
+  const r = L.validateBackup(JSON.stringify(s)); assert.equal(r.ok, true); assert.equal(r.state.reminders.length, 1); assert.deepEqual(r.state.chat.map((m) => m.role), ['user', 'assistant']);
+  assert.equal(L.validateBackup(JSON.stringify({ ...s, reminders: [{ title: 'x' }] })).ok, false); assert.equal(L.validateBackup(JSON.stringify({ ...s, chat: 'x' })).ok, false); assert.equal(L.validateBackup(JSON.stringify({ ...s, tasks: [null] })).ok, false);
+  const v3 = { app: 'anna-web', schema: 1, settings: { currency: '$', ai: { tasks: false } }, tasks: [], tx: [], bills: [], budgets: [], biz: [], mem: [], fb: [] }; const o = L.validateBackup(v3); assert.equal(o.ok, true); assert.equal(o.state.settings.currency, '$'); assert.deepEqual(o.state.reminders, []); assert.deepEqual(o.state.chat, []);
+  assert.equal(L.validateBackup(s).ok, true, 'accepts an object too'); });
+test('counts and description', () => { const s = L.emptyState(); s.tasks.push({}); s.mem.push({}, {}); assert.equal(L.describeCounts(L.counts(s)), '1 task, 0 reminders, 0 entries, 0 bills, 0 budgets, 0 business records, 2 memories, 0 messages'); });

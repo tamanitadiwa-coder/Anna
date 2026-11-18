@@ -1,38 +1,55 @@
-# Anna Web — v0.3.0
+# Anna — v0.4.1
 
-Independent browser/PWA edition of Anna for **iPhone Safari**. Separate from **Anna Native** (React Native / Expo): no shared files, database or build.
+**Anna** is a private personal assistant that runs entirely in your browser and is designed for **iPhone (Safari, added to the Home Screen)**. It organises your tasks, reminders, money, small business and personal memories, and has a **genuine offline AI** (Qwen2.5 0.5B Instruct) that runs on the phone itself. No accounts, no cloud, no subscriptions: your data and the AI stay on your device.
 
-## New in v0.3.0: offline AI brain (needs on-device verification, see below)
-Anna can answer questions with a small language model running **inside your browser** (wllama = llama.cpp compiled to WebAssembly). No cloud AI, no API key, no subscription.
-- **Model:** Qwen2.5 0.5B Instruct, Q4_K_M, about 398 MB (`bartowski/Qwen2.5-0.5B-Instruct-GGUF` on Hugging Face; published under Apache-2.0, check the model card).
-- **Engine:** `@wllama/wllama` 3.5.1 + `@wllama/wllama-compat` 3.5.1, bundled into your site at build time (`npm install`), so the engine also works offline.
-- **Storage:** the model is downloaded once into the browser's private file system (OPFS). After that Anna answers with no internet.
-- **Brain screen:** Download (with progress and Cancel), Load into memory, Unload, Delete, storage status, an honest status pill (*Not installed / Incomplete / Downloaded · not loaded / Ready*), and a **Run self-test** button.
-- **Privacy:** Anna can read your data only for categories you switch on (Tasks, Money, Business, Memories). All are **off by default**. Notes and customer names are never sent to the model, Anna cannot change data, and *Preview exactly what Anna sees* shows the full data block. The conversation is kept in memory only.
-- Existing features, data, backups and deployment are unchanged. The model file is **not** part of backups.
+Live site: **https://tamanitadiwa-coder.github.io/Anna/**
 
-## What was and was not tested
-- **Tested (automated):** all v0.2.0 features (33 checks, incl. upgrade from v0.1.0 data); the AI integration logic (23 checks) against a **stand-in engine**: download progress/cancel/failure, partial files never shown as installed, load/unload/delete, out-of-memory failure and retry, crash-during-load detection, missing engine files, permissions and prompt contents, answers while offline.
-- **NOT tested:** the real wllama engine, the real model, and iPhone Safari / Home Screen. I had no network or iPhone. Answers shown in my tests came from the stand-in, **not** from a real model. Treat v0.3.0 as ready for *your* testing, not as proven.
+| Area | What you can do |
+|---|---|
+| **Ask Anna (AI)** | Chat with a local AI model that works with no internet. It can read the categories you allow (tasks & reminders, money, business, memories) and answers from your real data. Conversation history is saved and readable even without the model. Stop button, clear conversation. |
+| **Tasks & reminders** | Tasks with due date, priority and notes (Today / Later / Done). Reminders with date, time and repeat (daily, weekly, monthly), alerts while Anna is open, optional notifications, and **Add to iPhone Calendar** (.ics) so you are alerted even when Anna is closed. |
+| **Money** | Income and expenses in rand (R 1 234,56), spending breakdown, 6-month cash flow, monthly budgets per category, bills with due dates, paid status, monthly roll-over and payment history. |
+| **Business** | Sales, expenses and invoices (cash basis profit), unpaid invoices, search across all records. |
+| **Brain** | Personal memories (save, search, filter, edit, delete), AI model management, privacy switches, diagnostics. |
+| **Owner lock** | Anna belongs to **Jamal Tamani**. Password-protected (PBKDF2 hash only, never the password), auto-lock after 5 min, Lock now, change password. |
+| **Your logo** | Settings → Anna logo: upload your own image; shown on the lock screen and every page; replace or reset any time. |
+| **Settings** | Encrypted backup export, verified restore with preview and undo, name, currency (rand by default), notifications, offline diagnostics, erase. |
 
-## Expected limits on iPhone (please read)
-- Default wllama builds do not run on Safari. Anna uses the **compat** build (slower, single thread; GitHub Pages cannot send the headers multi-threading needs). Expect a slow load and a few words per second.
-- A 0.5B model gives short, sometimes wrong answers. Numbers come from your data, but check the Money screen.
-- Loading puts roughly 400 MB+ into Safari's memory. An iPhone 15 should cope, but iOS can close the page if memory runs short. Anna detects this and shows a warning next time instead of retrying silently.
-- **Home Screen app and Safari tab have separate storage.** Download the model inside the one you will use (Home Screen recommended).
-- GPU use is a switch, off by default, because it may crash on iPhone.
+Every record can be **edited** (tap it) and **deleted** (bin icon, with Undo).
 
-## Install on iPhone
-1. **Deploy:** put the *contents* of `anna-web.zip` at the root of your GitHub repo (`index.html` and `.github/` at the top). Settings → Pages → Source: **GitHub Actions**. Push to `main`. The workflow runs `npm install`, tests, builds and publishes. In the Actions log look for `AI engine: 4 files ready`; if it says `INCOMPLETE`, send me that log line.
-2. **Home Screen:** open the site in Safari → Share → **Add to Home Screen**. Close Safari and open Anna from the new icon.
-3. **Download:** on Wi-Fi, in Anna open **Brain → Download model**. Keep the screen on and Anna open until it says *Downloaded*.
-4. **Load:** tap **Load into memory**. Wait until the pill says **Ready · works offline**.
-5. **Choose what Anna may read** (Brain → What Anna may read). Then tap **Ask Anna** (Home or Brain).
-6. **Offline test:** turn on Airplane Mode, reopen Anna, Load, ask a question.
-7. **Report back:** Brain → **Run self-test** → **Copy report** and send it to me, with what you saw.
+## Install on iPhone 15 (5 minutes + model download)
 
-## If Safari cannot run it
-If loading fails or crashes repeatedly, the honest conclusion is that this model or engine is too heavy for Safari on your phone. Options: (a) change `MODEL` in `ai.js` to a smaller GGUF (not yet verified by me); (b) use **Anna Native** with llama.rn, which runs the model natively and is the better long-term home for the AI.
+1. Open **https://tamanitadiwa-coder.github.io/Anna/** in **Safari**.
+2. Create your password on the welcome screen. Then tap **Share → Add to Home Screen → Add**. Close Safari and **always open Anna from the new icon** (the Home Screen app has its own storage, separate from Safari tabs).
+3. On **Wi-Fi**, open **Brain → Download AI model · 398 MB**. Keep the screen on and Anna open until the pill says **Installed · not loaded** (the file is checked with SHA-256 automatically).
+4. Tap **Load into memory**. Anna runs a real test answer; when it passes the pill says **Ready · works offline**.
+5. Tap **Ask Anna**. Try *“What should I focus on today?”*
+6. Optional: **Settings → Reminder alerts → Allow notifications**.
+7. Check offline readiness: **Settings → Offline diagnostics → Run diagnostics** should end with *“VERDICT: Ready for offline use.”* Then turn on Airplane Mode and use Anna normally.
 
-## Develop
-`npm install` · `npm test` (Node 22) · `npm run build` (writes `_site/`, including `vendor/manifest.json` describing the engine files) · `npm run serve`. Bump the version in `package.json`, `app.js` and `sw.js` together on each release.
+After an iPhone restart or closing Anna, the model stays installed; just tap **Load into memory** again (it does not re-download).
+
+**Back up regularly:** Settings → Export backup → save to Files/iCloud. Backups are encrypted with your password and contain all records, reminders, chat history, settings, logo and owner identity (not the 398 MB model). To move to a new phone see `HANDOVER.md` §12.
+
+## What to expect from the AI
+
+- It is a **small model running on the phone’s CPU**, so it is slower than cloud AI and can make mistakes. Always check important numbers on the Money screen.
+- In our test machine (a slow cloud CPU) the first answer after loading took ~40 s and later answers ~10 s; an iPhone 15 is expected to be faster, but this has **not yet been measured on a real iPhone** (see `docs/IPHONE-COMPATIBILITY.md`).
+- Loading needs roughly 0.5–1 GB of memory. If iOS closes Anna while loading, Anna tells you next time. Close other apps and try again.
+
+## For developers
+
+```bash
+npm ci            # installs the AI engine (wllama 3.5.1) — Node 22
+npm test          # 38 unit/build tests
+npm run build     # writes _site/ (exactly what the browser needs)
+npm run serve     # http://127.0.0.1:8080/Anna/
+npm run e2e       # browser tests (Playwright/Chromium); real-model tests need ANNA_MODEL_FILE or ANNA_REAL_HF=1
+npm run vendor    # after upgrading wllama: refresh vendor/ (committed engine files)
+```
+
+The repository root **is** the website (engine files are committed in `vendor/`), so GitHub Pages can serve it directly from `main`. See `HANDOVER.md` for the engineering state, `docs/TECHNICAL.md` for architecture, `docs/TEST-REPORT.md` for results, `docs/MODEL.md` for the AI model and checksum.
+
+Release checklist: bump the version in `package.json`, `app.js` and `sw.js` together (the build refuses mismatches).
+
+Licence: MIT (see `LICENSE`). The AI model is Qwen2.5-0.5B-Instruct by Alibaba Cloud (Apache-2.0), GGUF by bartowski.

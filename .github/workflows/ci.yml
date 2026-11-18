@@ -1,0 +1,59 @@
+# Anna Web: tests on every push, and (optionally) deployment to GitHub Pages.
+#
+# Deployment: the repository root is itself the complete website (the AI engine files are committed in vendor/),
+# so GitHub Pages works with Settings > Pages > Source: "Deploy from a branch" > main > / (root). No workflow needed.
+# If you prefer Source: "GitHub Actions", set the repository variable PAGES_VIA_ACTIONS = true and this workflow deploys _site/.
+name: Anna CI
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Unit and build tests
+        run: npm test
+      - name: Vendored AI engine matches package-lock
+        run: node scripts/vendor.mjs --check
+      - name: Build site
+        run: npm run build
+      - name: Install Playwright (Chromium)
+        run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - name: UI end-to-end (iPhone 15 emulation and desktop)
+        run: node test/e2e/ui.mjs && node test/e2e/ui.mjs desktop
+      - name: Real-model AI test (downloads the 398 MB model from Hugging Face; manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        run: ANNA_REAL_HF=1 node test/e2e/ai-real.mjs --safari-engine
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && vars.PAGES_VIA_ACTIONS == 'true'
+        with:
+          path: _site
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.PAGES_VIA_ACTIONS == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

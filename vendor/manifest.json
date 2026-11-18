@@ -1,0 +1,25 @@
+{
+ "engine": {
+  "ok": true,
+  "version": "3.5.1",
+  "missing": [],
+  "entry": "vendor/wllama/index.js",
+  "wasm": "vendor/wllama/wllama.wasm",
+  "compat": {
+   "worker": "vendor/wllama-compat/wllama.js",
+   "wasm": "vendor/wllama-compat/wllama.wasm"
+  },
+  "files": [
+   "vendor/wllama/index.js",
+   "vendor/wllama/wllama.wasm",
+   "vendor/wllama-compat/wllama.js",
+   "vendor/wllama-compat/wllama.wasm"
+  ],
+  "sha256": {
+   "vendor/wllama/index.js": "2ed031e8d61cebd1d4c7d4956a6350f5afc7fa7c678c3a324d66f6df958f67db",
+   "vendor/wllama/wllama.wasm": "4197ce6d3dc9240c42ee52b4197dc99638875a06b0083901f8a57767338a0cfa",
+   "vendor/wllama-compat/wllama.js": "011e11f2c2a4a94d1764a4f45993e01ae5c48f72d78d59464972b26606afd6ac",
+   "vendor/wllama-compat/wllama.wasm": "9ea153d9396db12c385d53e9a8330b1638ca3e8805159a762ce8859d92d2ac8b"
+  }
+ }
+}
