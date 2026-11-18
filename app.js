@@ -3,7 +3,7 @@
 import * as L from './logic.js';
 import * as AI from './ai.js';
 import * as A from './auth.js';
-export const VERSION = '0.4.1';
+export const VERSION = '0.6.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -53,7 +53,7 @@ function toast(msg, { action, ms = 3500, alert = false } = {}) {
 // ---- icons & charts (inline SVG, no dependencies) ----
 const P = { home: '<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>', tasks: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>', money: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M16 14.5h2"/>', biz: '<rect x="3" y="8" width="18" height="12" rx="2.5"/><path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>', brain: '<circle cx="12" cy="12" r="2.5"/><circle cx="5" cy="6" r="1.8"/><circle cx="19" cy="7" r="1.8"/><circle cx="6" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/><path d="M10 10.5 6.3 7.3M14 10.5l3.7-2.2M10 13.5l-2.7 3M14 13.5l2.7 3"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>', plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', trash: '<path d="M6 7h12M10 7V5h4v2M8 7l1 12h6l1-12"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>', cal: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>', stop: '<rect x="7" y="7" width="10" height="10" rx="2"/>' };
 const ic = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
-const COL = ['#E6E8EC', '#A7ACB4', '#6E737B', '#C9B79C', '#8BA3B8', '#4A4E55'];
+const COL = ['#EAF7FF', '#A9DFFF', '#75CFFF', '#3E8FC4', '#2B5C80', '#1B3550'];
 function donut(parts) { const t = parts.reduce((n, p) => n + p.value, 0); if (!t) return ''; let off = 25;
   return `<svg viewBox="0 0 42 42" class="donut" role="img" aria-label="Spending breakdown"><circle cx="21" cy="21" r="15.9155" fill="none" stroke="#25272C" stroke-width="5"/>${parts.map((p) => { const pc = (p.value / t) * 100, s = `<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${p.color}" stroke-width="5" stroke-dasharray="${Math.max(pc - 0.6, 0.1)} ${100 - pc + 0.6}" stroke-dashoffset="${off}"/>`; off -= pc; return s; }).join('')}</svg>`; }
 function bars(d) { const mx = Math.max(1, ...d.flatMap((x) => [x.a, x.b])), h = 100, bw = 12, gap = (300 - d.length * (bw * 2 + 3)) / (d.length + 1);
@@ -63,8 +63,9 @@ const six = () => Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.
 const logo = '<svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F4F5F7"/><stop offset=".5" stop-color="#C4C8CE"/><stop offset="1" stop-color="#7E848C"/></linearGradient></defs><circle cx="16" cy="16" r="15" fill="#0B0B0D" stroke="url(#lg)" stroke-width="1.2"/><text x="16" y="22" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-weight="700" font-size="17" fill="url(#lg)">A</text></svg>';
 
 // ---- shared pieces ----
-const brandLogo = (cls = 'ulogo') => (logoUrl ? `<img class="${cls}" src="${logoUrl}" alt="Anna logo">` : cls === 'ulogo' ? logo : `<div class="${cls}">${logo}</div>`);
-const top = () => `<div class="top"><div class="brand">${brandLogo()}Anna</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
+const orb = (size = '', live = true) => `<span class="orb ${size}" ${live ? 'data-live' : ''} data-s="${orbState()}" aria-hidden="true"></span>`;
+const brandLogo = (cls = 'ulogo') => (logoUrl ? `<img class="${cls}" src="${logoUrl}" alt="Anna logo">` : cls === 'ulogo' ? orb('xs') : `<div class="${cls}">${logo}</div>`);
+const top = () => `<div class="top"><div class="brand">${brandLogo()}ANNA</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
 const title = (eye, t, sub) => `<div><div class="eyebrow">${eye}</div><h1>${t}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 const sh = (t, link = '') => `<div class="sh"><h2>${t}</h2>${link}</div>`;
 const more = (tb, txt = 'See all') => `<button class="link" data-tab="${tb}">${txt}</button>`;
@@ -93,24 +94,31 @@ function activity() { const a = [];
   S.biz.forEach((r) => a.push({ t: r.occurred_at, i: 'biz', x: `${r.kind[0].toUpperCase() + r.kind.slice(1)} · ${esc(r.description)}` }));
   S.mem.forEach((m) => a.push({ t: m.created_at || 0, i: 'brain', x: `Remembered “${esc(m.content.slice(0, 48))}”` }));
   return a.filter((x) => x.t).sort((x, y) => y.t - x.t).slice(0, 6); }
+const ownerFirst = () => (S.settings.name || A.OWNER.name.split(' ')[0]).trim();
+function orbState() { const a = AI.ai; if (['loading', 'downloading', 'verifying'].includes(a.state)) return 'think'; if (a.state !== 'ready') return 'off'; if (a.phase === 'think') return 'think'; if (a.phase === 'speak') return 'speak'; return sheet === 'chat' ? 'listen' : 'rest'; }
+function presenceText() { const a = AI.ai, st = orbState(), secs = a.loadStart ? Math.round((Date.now() - a.loadStart) / 1000) : 0;
+  if (a.state === 'loading') return `<b>Waking up</b> · ${esc(a.stage || 'Starting')} · ${secs}s`;
+  if (a.state === 'downloading' || a.state === 'verifying') return '<b>Installing</b> · see Brain';
+  if (a.state === 'ready') return { think: '<b>Thinking…</b>', speak: '<b>Responding…</b>', listen: '<b>Listening</b>', rest: '<b>Awake</b> · resting · works offline' }[st];
+  if (a.state === 'cached') return 'Resting · switch on to wake ANNA';
+  if (a.state === 'absent' || a.state === 'partial') return 'Offline brain not installed yet';
+  if (a.state === 'unsupported') return 'AI brain not available on this device'; return 'Resting'; }
+function paintOrbs() { const st = orbState(); document.querySelectorAll('.orb[data-live]').forEach((o) => { if (o.dataset.s !== st) o.dataset.s = st; }); const p = $('#pstatus'); if (p) p.innerHTML = presenceText(); const w = $('#awake'); if (w) { const on = ['ready', 'loading'].includes(AI.ai.state); w.classList.toggle('on', on); w.setAttribute('aria-checked', on); } }
+let tick = 0; const ensureTicker = () => { const need = AI.ai.state === 'loading'; if (need && !tick) tick = setInterval(() => { paintOrbs(); if (tab === 'brain') { paintEngine(); const e = $('#loadsecs'); if (e) e.textContent = Math.round((Date.now() - AI.ai.loadStart) / 1000) + 's'; } }, 1000); if (!need && tick) { clearInterval(tick); tick = 0; } };
 const aiPill = () => { const a = AI.ai; return a.state === 'ready' ? '<span class="chip good">AI ready · offline</span>' : a.state === 'cached' ? '<span class="chip gold">AI installed · tap to load</span>' : ['downloading', 'verifying', 'loading'].includes(a.state) ? '<span class="chip gold">AI preparing…</span>' : '<span class="chip">AI not installed</span>'; };
 
 // ---- screens ----
 const TABS = [['home', 'Home'], ['tasks', 'Tasks'], ['money', 'Money'], ['biz', 'Business'], ['brain', 'Brain']];
 const screens = {
   home() {
-    const m = L.monthSummary(S), b = L.businessSummary(S), g = tasksOf(), h = new Date().getHours(), nm = (S.settings.name || A.OWNER.name.split(' ')[0]).trim(), rem = L.pendingReminders(S).slice(0, 3);
-    const dueSoon = S.bills.filter((x) => !x.paid && x.due_at < Date.now() + 7 * 864e5).length, over = L.budgetStatus(S).filter((x) => x.over).length;
-    const bits = [`${g.today.length} priorit${g.today.length === 1 ? 'y' : 'ies'} today`, rem.length ? `${L.pendingReminders(S).length} reminder${L.pendingReminders(S).length > 1 ? 's' : ''}` : '', dueSoon ? `${dueSoon} bill${dueSoon > 1 ? 's' : ''} due this week` : '', over ? `${over} budget${over > 1 ? 's' : ''} over` : ''].filter(Boolean).join(' · ');
-    const mo = six().map((x) => { const s = L.monthSummary(S, x.t); return { l: x.l, a: s.income, b: s.expense }; }), act = activity();
-    return top() + `<div>${title(new Date().toLocaleDateString('en-ZA', { weekday: 'long', month: 'long', day: 'numeric' }), `${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'}${nm ? ',<br>' + esc(nm) : ''}`, bits)}</div>
-      <div class="card ask" data-act="chat-open" role="button" aria-label="Ask Anna"><div class="dot">${ic('brain')}</div><div class="grow"><b>Ask Anna</b><div class="mute">Private answers on this device, even offline</div><div>${aiPill()}</div></div><span class="mute">›</span></div>
-      <div class="hero" data-tab="money"><div class="k">This month</div><div class="big">${money(m.net)}</div><div class="pills"><div class="pill"><span>Income</span><b>${money(m.income)}</b></div><div class="pill"><span>Spent</span><b>${money(m.expense)}</b></div></div><div style="margin-top:14px">${bars(mo)}</div></div>
-      <div>${sh('Today’s priorities', more('tasks'))}${g.today.slice(0, 3).map(taskCard).join('') || `<div class="card">${empty('A clear day. Add a priority when you’re ready.')}</div>`}</div>
-      <div>${sh('Reminders', `<button class="link" data-act="view" data-id="reminders">See all</button>`)}${rem.map(remCard).join('') || `<div class="card">${empty('No reminders set.')}</div>`}</div>
-      <div>${sh('Coming up')}${g.upcoming.slice(0, 3).map(taskCard).join('') || `<div class="card">${empty('Nothing scheduled ahead.')}</div>`}</div>
-      <div>${sh('Business', more('biz', 'Open'))}<div class="card" data-tab="biz"><div class="row"><div class="grow"><div class="mute">Profit this month</div><div style="font:500 28px var(--serif)" class="${b.profit < 0 ? 'neg' : 'pos'}">${money(b.profit)}</div></div><div class="r"><div class="mute">Revenue</div><b>${money(b.revenue)}</b></div></div>${b.unpaid ? `<span class="chip gold">${money(b.unpaid)} awaiting payment</span>` : ''}</div></div>
-      <div>${sh('Recent activity')}<div class="card">${act.map((x) => `<div class="item"><div class="dot">${ic(x.i)}</div><div class="grow">${x.x}</div><span class="mute">${ago(x.t)}</span></div>`).join('') || empty('Your activity will appear here.')}</div></div>`;
+    const g = tasksOf(), rem = L.pendingReminders(S).slice(0, 2), on = ['ready', 'loading'].includes(AI.ai.state);
+    return top() + `<section class="presence">${orb('', true)}<div class="aname">ANNA</div><h1>Hey, ${esc(ownerFirst())}.</h1>
+      <div class="pstatus" id="pstatus">${presenceText()}</div>
+      <div class="awake"><span>ANNA is awake</span><button class="sw ${on ? 'on' : ''}" id="awake" data-act="awake" role="switch" aria-checked="${on}" aria-label="ANNA is awake"><i></i></button></div>
+      <button class="btn ask" data-act="chat-open">Talk to ANNA</button></section>
+      <div class="quiet">${g.today.length ? sh('Today', more('tasks')) + g.today.slice(0, 3).map(taskCard).join('') : ''}
+      ${rem.length ? sh('Reminders', `<button class="link" data-act="view" data-id="reminders">See all</button>`) + rem.map(remCard).join('') : ''}
+      ${!g.today.length && !rem.length ? `<div class="empty">A quiet day. ANNA is here when you need her.</div>` : ''}</div>`;
   },
   tasks() {
     const g = tasksOf(), rem = L.pendingReminders(S), remDone = S.reminders.filter((r) => r.done).sort((a, b) => (b.done_at || 0) - (a.done_at || 0)).slice(0, 20);
@@ -188,6 +196,7 @@ const screens = {
         <button class="btn soft sm" data-act="prefs">Save preferences</button></div>
       <div class="card"><h2>Reminder alerts</h2><div class="mute" style="margin:4px 0 10px">${remHelp()}</div><div class="status"><b>Notifications</b><span class="${perm === 'granted' ? 'y' : perm === 'denied' ? 'n' : 'm'}">${{ granted: 'Allowed', denied: 'Blocked by the browser (on iPhone: Settings → Notifications → Anna)', default: 'Not yet allowed', unsupported: navigator.standalone === false ? 'Open Anna from the Home Screen icon to enable' : 'Not supported in this browser' }[perm]}</span></div>
         ${perm === 'default' ? '<button class="btn sm" style="margin-top:10px" data-act="notif">Allow notifications</button>' : ''}${perm === 'granted' ? '<button class="btn sage sm" style="margin-top:10px" data-act="notif-test">Send a test alert</button>' : ''}</div>
+      <div class="card"><h2>AI engine</h2><div class="status"><b>Engine</b><span>WebLLM (WebGPU)</span><b>Model</b><span>${esc(AI.ai.info.modelId || AI.MODEL.name)}</span><b>Status</b><span>${esc({ ready: 'Loaded · works offline', cached: 'On this device · not loaded', absent: 'Not downloaded yet', downloading: 'Downloading…', loading: 'Loading…', unsupported: 'AI brain not available on this device (no WebGPU)' }[AI.ai.state] || AI.ai.state)}</span></div></div>
       <div class="card"><h2>Offline diagnostics</h2><div class="mute" style="margin:4px 0 10px">Checks internet, installed app files, the AI engine and model, storage and the database. Works with no internet.</div><div class="row wrap"><button class="btn sm" data-act="diag">Run diagnostics</button>${diag ? '<button class="btn sage sm" data-act="diag-copy">Copy report</button>' : ''}</div>${diag ? `<pre class="diag" id="diagout">${esc(diag)}</pre>` : ''}</div>
       <div class="card"><h2>Storage</h2><div class="mute" id="stor">Using ${mode}. Checking persistence…</div></div>
       <div class="card"><h2>On your iPhone</h2><div class="mute">Safari → Share → <b>Add to Home Screen</b>, then always open Anna from that icon. The Home Screen app keeps its own storage, separate from Safari tabs: install the AI model and keep your data inside the one you use. Use a backup to move data between them.</div></div>
@@ -206,25 +215,28 @@ function memList() {
 // ---- Anna's mind: local AI engine card, permissions, chat ----
 const mb = (b) => Math.round((b || 0) / 1e6) + ' MB';
 const sw = (k, label, hint) => `<div class="swrow"><div class="grow"><b>${label}</b>${hint ? `<div class="mute">${hint}</div>` : ''}</div><button class="sw ${S.settings.ai[k] ? 'on' : ''}" data-act="acc" data-id="${k}" role="switch" aria-checked="${!!S.settings.ai[k]}" aria-label="${label}"><i></i></button></div>`;
+let oldInfo = null, oldChecked = false;
+const checkOld = async () => { if (oldChecked) return; oldChecked = true; oldInfo = await AI.oldModel(); if (oldInfo) { engKey = ''; paintEngine(); } };
 function engineHTML() {
+  checkOld();
   const a = AI.ai, st = a.state, M = AI.MODEL, p = a.progress, pct = p ? Math.min(100, Math.floor((p.loaded / (p.total || M.bytes)) * 100)) : 0;
   const pill = { unknown: ['Checking…', ''], unsupported: ['Not supported', 'bad'], absent: ['Not installed', ''], partial: ['Incomplete download', 'bad'], downloading: [`Downloading ${pct}%`, 'gold'], verifying: [`Verifying ${pct}%`, 'gold'], cached: ['Installed · not loaded', 'gold'], loading: ['Loading…', 'gold'], ready: ['Ready · works offline', 'good'] }[st] || ['Unknown', ''];
   const b = (act, t, c = '') => `<button class="btn ${c}" data-act="${act}">${t}</button>`;
-  const row = { absent: b('ai-download', `Download AI model · ${mb(M.bytes)}`), partial: b('ai-download', 'Download again') + b('ai-delete', 'Delete', 'bad'), downloading: b('ai-cancel', 'Cancel download', 'sage'), verifying: '<button class="btn" disabled>Checking the file…</button>', cached: b('ai-load', 'Load into memory') + b('ai-delete', 'Delete model', 'bad'), loading: '<button class="btn" disabled>Loading… keep Anna open</button>', ready: b('chat-open', 'Ask Anna') + b('ai-unload', 'Unload', 'sage') + b('ai-delete', 'Delete model', 'bad') }[st] || '';
+  const row = { absent: b('ai-download', a.error ? 'Retry download' : `Download AI brain · ${mb(M.bytes)}`), partial: b('ai-download', 'Download again') + b('ai-delete', 'Delete', 'bad'), downloading: b('ai-cancel', 'Cancel download', 'sage'), verifying: '<button class="btn" disabled>Checking the file…</button>', cached: b('ai-load', a.error ? 'Retry' : 'Load into memory') + b('ai-delete', 'Delete model', 'bad'), loading: b('ai-cancel-load', 'Cancel', 'sage'), ready: b('chat-open', 'Ask Anna') + b('ai-unload', 'Unload', 'sage') + b('ai-delete', 'Delete model', 'bad') }[st] || '';
   const stg = a.storage ? `Browser storage: ${mb(a.storage.usage)} used of ${mb(a.storage.quota)} · ${a.storage.persisted ? 'persistent' : 'not marked persistent'}` : '';
   const prog = st === 'downloading' || st === 'verifying';
   return `<div class="card mind"><div class="row"><h2 class="grow">Anna’s offline AI</h2><span class="chip ${pill[1]}" id="pill">${pill[0]}</span></div>
     <div class="mute" style="margin:6px 0 10px">${esc(M.name)} (${M.quant}) · ${mb(M.bytes)} · runs only on this device. ${st === 'absent' ? 'One-time download over Wi-Fi; afterwards Anna answers with no internet.' : ''}</div>
     ${prog ? `<div class="bar"><i id="dlbar" style="width:${pct}%;animation:none"></i></div><div class="mute" id="dltxt" style="margin:6px 0 10px">${st === 'verifying' ? `Checking SHA-256: ${mb(p?.loaded)} of ${mb(p?.total)}` : `${mb(p?.loaded)} of ${mb(p?.total)} · keep the screen on and Anna open`}</div>` : ''}
-    ${st === 'loading' ? '<div class="bar busy"><i></i></div><div class="mute" style="margin:6px 0 10px">Loading the model and running a test answer. This can take up to a minute.</div>' : ''}
+    ${st === 'loading' ? `<div class="bar busy"><i></i></div><div class="loadline"><span>${esc(a.stage || 'Starting')}…</span><span id="loadsecs">${Math.round((Date.now() - a.loadStart) / 1000)}s</span></div>${Date.now() - a.loadStart > 90000 ? '<div class="note">This is slower than expected. Keep ANNA open with the screen on, and close other apps. You can cancel safely: the model stays installed.</div>' : ''}` : ''}
     ${a.crashed && st !== 'loading' ? `<div class="warn">Last time the model was loading, the page was closed (usually iOS running out of memory). Close other apps, then try again.<br><button class="link" data-act="ai-ack">Dismiss</button></div>` : ''}
     ${a.error ? `<div class="warn">${esc(a.error)}</div>` : ''}
     ${st === 'ready' && a.info.selfTest ? `<div class="ok">Self-test passed: the model answered “${esc(a.info.selfTest.reply.slice(0, 60))}”.</div>` : ''}
     <div class="btnrow">${row}</div>
-    <div class="mute" style="margin-top:10px">${a.info.bytes ? `On this device: ${mb(a.info.bytes)}${a.info.verified ? ', SHA-256 verified' : ''}. ` : ''}${a.info.loadMs ? `Loaded in ${(a.info.loadMs / 1000).toFixed(1)} s. ` : ''}${a.info.tps ? `Last speed: ${a.info.tps} tokens/s. ` : ''}${stg}</div>
+    ${oldInfo ? `<div class="note">The previous AI model (wllama, ${mb(oldInfo.bytes)}) is still stored on this device and is no longer used.<div class="row wrap" style="margin-top:8px"><button class="btn sm bad" data-act="old-delete">Delete old model</button><button class="btn sm sage" data-act="old-keep">Keep for now</button></div></div>` : ''}
+    <div class="mute" style="margin-top:10px">${a.info.bytes ? `On this device: ${mb(a.info.bytes)}. ` : ''}${a.info.loadMs ? `Loaded in ${(a.info.loadMs / 1000).toFixed(1)} s. ` : ''}${a.info.tps ? `Last speed: ${a.info.tps} tokens/s. ` : ''}${stg}</div>
     <details style="margin-top:8px"><summary class="mute" style="min-height:44px;display:flex;align-items:center;cursor:pointer">Advanced &amp; limitations</summary>
-      <div class="mute" style="margin:4px 0 6px">A small model runs on the phone’s CPU, so answers take a few seconds and can be wrong: always check numbers on the Money screen. The model file is not part of backups. Checksum: <code style="overflow-wrap:anywhere">${M.sha256}</code></div>
-      ${sw('gpu', 'Use GPU (experimental)', 'Faster on some devices but may crash on iPhone. Leave off unless testing. Takes effect next time you load.')}
+      <div class="mute" style="margin:4px 0 6px">Engine: WebLLM on the phone’s GPU (WebGPU). Model ${esc(a.info.modelId || M.name)}. It is downloaded once and kept on this device, so it also loads in Airplane Mode. A small model can be wrong: always check numbers on the Money screen. The model is not part of backups.</div>
     </details>
     <div class="row wrap" style="margin-top:6px"><button class="btn sage sm" data-act="diag">Run diagnostics</button>${diag ? '<button class="btn sage sm" data-act="diag-copy">Copy report</button>' : ''}</div>${diag && tab === 'brain' ? `<pre class="diag">${esc(diag)}</pre>` : ''}</div>`;
 }
@@ -243,7 +255,7 @@ function chatMain() {
 }
 function chatPanel() {
   const on = AI.ACCESS.filter(([k]) => S.settings.ai[k]).map(([, n]) => n), busy = AI.ai.busy;
-  return `<div class="pn chat" role="dialog" aria-label="Ask Anna"><div class="row" style="margin-bottom:8px"><div class="grow"><h2>Ask Anna</h2><div class="mute">${on.length ? 'Can read: ' + on.join(', ') : 'Can read nothing yet'} · <button class="link" style="min-height:0;padding:0" data-act="ctx-open">what’s shared</button></div></div><button class="ib" data-act="chat-clear" aria-label="Clear conversation">${ic('trash')}</button><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
+  return `<div class="pn chat" role="dialog" aria-label="Ask Anna"><div class="row" style="margin-bottom:8px"><div class="grow"><div class="row" style="gap:10px">${orb('md')}<h2>ANNA</h2></div><div class="mute">${on.length ? 'Can read: ' + on.join(', ') : 'Can read nothing yet'} · <button class="link" style="min-height:0;padding:0" data-act="ctx-open">what’s shared</button></div></div><button class="ib" data-act="chat-clear" aria-label="Clear conversation">${ic('trash')}</button><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
     <div id="chatmain" class="chatmain">${chatMain()}</div>
     <form data-form="chat" class="chatin"><textarea name="msg" rows="1" placeholder="${AI.ai.state === 'ready' ? 'Ask Anna…' : 'Load the AI to ask a question'}" maxlength="800" required aria-label="Message"></textarea>${busy ? `<button type="button" class="btn sage" data-act="chat-stop" aria-label="Stop">${ic('stop')}</button>` : `<button class="btn" id="send" ${AI.ai.state === 'ready' ? '' : 'disabled'}>Send</button>`}</form></div>`;
 }
@@ -256,7 +268,7 @@ const restorePanel = () => { const r = pendingRestore; if (!r) return '';
   <div class="note">Restoring <b>replaces</b> everything on this device with the backup. A safety copy of your current data is kept, so you can undo it from Settings.</div>
   <button class="btn full" data-act="restore-confirm">Replace my data with this backup</button><button class="btn sage full" style="margin-top:8px" data-act="close">Cancel</button></div>`; };
 let engKey = '';
-const paintEngine = () => { const e = $('#engine'); if (!e) return; const a = AI.ai, key = [a.state, a.error, a.crashed, diag, JSON.stringify(a.info), JSON.stringify(a.storage), JSON.stringify(S.settings.ai)].join('|');
+const paintEngine = () => { const e = $('#engine'); if (!e) return; const a = AI.ai, key = [a.state, a.stage, a.state === 'loading' && Date.now() - a.loadStart > 90000, a.error, a.crashed, diag, JSON.stringify(a.info), JSON.stringify(a.storage), JSON.stringify(S.settings.ai)].join('|');
   if (key === engKey && (a.state === 'downloading' || a.state === 'verifying') && $('#dlbar')) { const p = a.progress, pct = p ? Math.min(100, Math.floor((p.loaded / (p.total || AI.MODEL.bytes)) * 100)) : 0; $('#dlbar').style.width = pct + '%'; $('#dltxt').textContent = a.state === 'verifying' ? `Checking SHA-256: ${mb(p?.loaded)} of ${mb(p?.total)}` : `${mb(p?.loaded)} of ${mb(p?.total)} · keep the screen on and Anna open`; $('#pill').textContent = `${a.state === 'verifying' ? 'Verifying' : 'Downloading'} ${pct}%`; return; }
   const open = e.querySelector('details')?.open; engKey = key; e.innerHTML = engineHTML(); if (open) e.querySelector('details').open = true; };
 let chatKey = '';
@@ -332,8 +344,8 @@ async function runDiagnostics() {
   try {
     const reg = await navigator.serviceWorker?.getRegistration(), keys = await caches.keys(), app = keys.find((k) => k === 'anna-web-' + VERSION), eng = keys.find((k) => k.startsWith('anna-engine-'));
     const appN = app ? (await (await caches.open(app)).keys()).length : 0, engN = eng ? (await (await caches.open(eng)).keys()).length : 0;
-    out.push(`Offline app files: service worker ${reg?.active ? 'active' : 'NOT active'}${navigator.serviceWorker?.controller ? ', controlling this page' : ', not yet controlling this page (reopen Anna)'}; app cache ${app ? appN + ' files' : 'MISSING'}; AI engine cache ${eng ? `${eng.replace('anna-engine-', 'wllama ')} (${engN}/4 files)` : 'MISSING'}`);
-    if (!eng || engN < 4) navigator.serviceWorker?.controller?.postMessage('cache-engine');
+    out.push(`Offline app files: service worker ${reg?.active ? 'active' : 'NOT active'}${navigator.serviceWorker?.controller ? ', controlling this page' : ', not yet controlling this page (reopen Anna)'}; app cache ${app ? appN + ' files' : 'MISSING'}; AI engine cache ${eng ? `${eng.replace('anna-engine-', 'WebLLM ')} (${engN} file${engN === 1 ? "" : "s"})` : 'MISSING'}`);
+    if (!eng || engN < 1) navigator.serviceWorker?.controller?.postMessage('cache-engine');
   } catch (e) { out.push('Cache check failed: ' + e.message); }
   out.push(`Notifications: ${typeof Notification === 'undefined' ? 'not available here' : Notification.permission}; pending reminders: ${L.pendingReminders(S).length}`);
   out.push(...(await AI.aiDiagnostics()));
@@ -362,12 +374,16 @@ const actions = {
     toast(`${NAME[k]} deleted`, { ms: 6000, action: { label: 'Undo', fn: () => { if (!undo) return; const u = undo; undo = null; mutate(() => { S[u.key].splice(Math.min(u.i, S[u.key].length), 0, u.item); }, { close: false }); } } }); },
   edit: (id, el) => { sheet = el.dataset.k; editId = id; render(); },
   view: (id) => { tab = 'tasks'; taskView = id; sheet = null; render(true); },
-  'chat-open': () => { sheet = 'chat'; render(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
+  'chat-open': () => { sheet = 'chat'; render(); paintOrbs(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
   'chat-clear': () => { if (!S.chat.length || confirm('Clear the whole conversation? This cannot be undone (it is also removed from future backups).')) { S.chat = []; save(); paintChat(true); } },
   'chat-stop': () => AI.stop(),
   'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); scrollTo(0, 0); },
   'ai-download': () => { if (!navigator.onLine) return toast('You are offline. Connect to Wi-Fi to download the model.'); AI.download(); },
-  'ai-cancel': () => AI.cancelDownload(), 'ai-load': () => AI.load({ gpu: S.settings.ai.gpu }), 'ai-unload': () => AI.unload(), 'ai-ack': () => AI.ackCrash(),
+  'ai-cancel': () => AI.cancelDownload(), 'ai-cancel-load': () => AI.cancelLoad(),
+  awake: () => { const st = AI.ai.state; if (st === 'ready') return AI.unload(); if (st === 'loading') return AI.cancelLoad(); if (st === 'cached') return AI.load({ gpu: S.settings.ai.gpu }); if (st === 'absent') { tab = 'brain'; render(true); return toast('Download ANNA’s brain first (one-time, Wi-Fi recommended).', { ms: 5000 }); } if (st === 'unsupported') return toast(AI.ai.error || 'AI brain not available on this device.', { ms: 6000 }); toast('Please wait a moment…'); },
+  meet: () => { welcomed = true; render(true); }, 'ai-load': () => AI.load({ gpu: S.settings.ai.gpu }), 'ai-unload': () => AI.unload(), 'ai-ack': () => AI.ackCrash(),
+  'old-delete': async () => { if (!oldInfo || !confirm(`Delete the old AI model file (${mb(oldInfo.bytes)})? ANNA now uses WebLLM, so it is no longer needed. This cannot be undone.`)) return; try { await AI.deleteOldModel(); oldInfo = null; engKey = ''; paintEngine(); toast('Old model deleted.'); } catch (e) { toast('Could not delete: ' + e.message); } },
+  'old-keep': () => { oldInfo = null; engKey = ''; paintEngine(); },
   'ai-delete': () => { if (confirm(`Delete the AI model (${mb(AI.MODEL.bytes)}) from this device? You will need internet to download it again. Your data is not affected.`)) AI.remove(); },
   diag: async () => { diag = 'Running diagnostics…'; tab === 'data' ? render() : paintEngine(); diag = await runDiagnostics(); tab === 'data' ? render() : paintEngine(); },
   'diag-copy': async () => { try { await navigator.clipboard.writeText(diag); toast('Report copied.'); } catch { prompt('Copy this report:', diag); } },
@@ -447,24 +463,27 @@ const AUTOLOCK_MS = 5 * 6e4;
 let pendingFile = null;
 const fails = () => { try { return JSON.parse(localStorage.getItem('anna-web:fails') || '{"n":0,"until":0}'); } catch { return { n: 0, until: 0 }; } };
 const setFails = (f) => { try { localStorage.setItem('anna-web:fails', JSON.stringify(f)); } catch {} };
+let welcomed = false;
+const lockIc = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 function lockScreen() {
-  const head = `<div class="lockv">${brandLogo('biglogo')}<h1>Anna</h1><div class="sub">Private assistant of ${esc(A.OWNER.name)}</div>`;
-  const msg = lockMsg ? `<div class="warn">${esc(lockMsg)}</div>` : '';
-  if (!auth) return head + `<div class="card" style="text-align:left;width:100%"><h2>Welcome, ${esc(A.OWNER.name.split(' ')[0])}</h2><div class="mute" style="margin:6px 0">Create the password that protects your conversations, memories and records on this device. It is never stored or sent anywhere, only a secure hash of it.</div>${msg}
-    <form data-form="setup" novalidate>${fld('New password (at least 8 characters)', '<input name="pw" type="password" autocomplete="new-password" required>')}${fld('Repeat password', '<input name="pw2" type="password" autocomplete="new-password" required>')}<button class="btn full" style="margin-top:12px">Create password</button></form>
-    <div class="sh"><h2>Moving from another device?</h2></div><div class="mute">Restore an encrypted Anna backup. Its password becomes this device’s password.</div>
-    ${pendingFile ? `<form data-form="setuprestore" novalidate><div class="mute" style="margin-top:8px">File: ${esc(pendingFile.name)}</div>${fld('Backup password', '<input name="pw" type="password" autocomplete="current-password" required>')}<button class="btn full" style="margin-top:12px">Restore and unlock</button></form>` : '<button class="btn sage full" style="margin-top:10px" data-act="setup-restore">Choose backup file…</button>'}<input id="sfile" type="file" accept="application/json,.json" hidden></div></div>`;
+  if (!welcomed) return `<div class="welcome"><div class="aname">ANNA</div>${orb('', false).replace('data-s="off"', 'data-s="rest"')}<div class="hey">Hey, ${esc(ownerFirst())}.</div><div class="tagline">Your space. Your thoughts. Your ANNA.</div><button class="btn" data-act="meet">Meet ANNA</button></div><div class="powered">POWERED BY TAMANY.TECH</div>`;
+  const msg = lockMsg ? `<div class="warn">${esc(lockMsg)}</div>` : '', head = `<div class="access">${logoUrl ? brandLogo('biglogo') : orb('sm', false).replace('data-s="off"', 'data-s="rest"')}<div class="aname">ANNA</div>`;
+  const priv = `<div class="privacy">${lockIc}Private to ${esc(A.OWNER.name)} · stays on this device</div>`;
+  if (!auth) return head + `<div class="lockv" style="min-height:0;gap:0;padding:0;width:100%"><div class="tagline" style="margin:0 0 18px">Create your password.</div>${msg}
+    <form data-form="setup" novalidate><input name="pw" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" aria-label="New password" required><input name="pw2" type="password" placeholder="Repeat password" autocomplete="new-password" aria-label="Repeat password" required style="margin-top:10px"><button class="btn">Create password</button></form>${priv}
+    <details><summary>Moving from another device?</summary><div class="mute" style="margin-bottom:8px">Restore an encrypted ANNA backup. Its password becomes this device’s password.</div>
+    ${pendingFile ? `<form data-form="setuprestore" novalidate><div class="mute" style="margin:6px 0">${esc(pendingFile.name)}</div><input name="pw" type="password" placeholder="Backup password" autocomplete="current-password" aria-label="Backup password" required><button class="btn">Restore and unlock</button></form>` : '<button class="btn sage" data-act="setup-restore">Choose backup file…</button>'}<input id="sfile" type="file" accept="application/json,.json" hidden></details></div></div>`;
   const f = fails(), wait = Math.max(0, f.until - Date.now());
-  return head + `<div class="card" style="text-align:left;width:100%"><h2>Unlock</h2>${msg}${wait ? `<div class="note">Too many wrong passwords. Try again in ${Math.ceil(wait / 1000)} s.</div>` : ''}
-    <form data-form="unlock" novalidate>${fld('Password', '<input name="pw" type="password" autocomplete="current-password" required autofocus>')}<button class="btn full" style="margin-top:12px" ${wait ? 'disabled' : ''}>Unlock</button></form>
-    <details style="margin-top:10px"><summary class="mute" style="min-height:44px;display:flex;align-items:center">Forgot password?</summary><div class="mute">There is no way to recover it: that is what keeps your data private. You can reset Anna on this device (all data here is deleted) and then restore an encrypted backup if you remember its password.</div><button class="btn bad full" style="margin-top:8px" data-act="reset-anna">Reset Anna on this device</button></details></div></div>`;
+  return head + `<div class="lockv" style="min-height:0;gap:0;padding:0;width:100%">${msg}${wait ? `<div class="note">Too many attempts. Try again in ${Math.ceil(wait / 1000)} s.</div>` : ''}
+    <form data-form="unlock" novalidate><input name="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required autofocus><button class="btn" ${wait ? 'disabled' : ''}>Enter</button></form>${priv}
+    <details><summary>Forgot password?</summary><div class="mute">There is no way to recover it: that is what keeps your data private. You can reset ANNA on this device (everything here is deleted) and then restore an encrypted backup if you remember its password.</div><button class="btn bad" style="width:100%;margin-top:8px" data-act="reset-anna">Reset ANNA on this device</button></details></div></div>`;
 }
 async function unlocked(pw) {
   bkKey = await A.backupKey(auth, pw); locked = false; lockMsg = ''; pendingFile = null; setFails({ n: 0, until: 0 });
   render(true);
   if (!started) { started = true; await save(); AI.refresh(); checkReminders(); setInterval(() => { if (!locked) checkReminders(); }, 15000); }
 }
-function lockNow() { locked = true; bkKey = null; sheet = null; editId = null; pendingRestore = null; diag = ''; render(true); }
+function lockNow() { welcomed = true; locked = true; bkKey = null; sheet = null; editId = null; pendingRestore = null; diag = ''; render(true); }
 async function setLogo(url, persist = true) {
   logoUrl = url || null; if (persist) await kvSet('logo', logoUrl);
   for (const [rel, def] of [['apple-touch-icon', 'icons/apple-touch-icon.png'], ['icon', 'icons/icon-192.png']]) { const l = document.querySelector(`link[rel="${rel}"]`); if (l) l.href = logoUrl || def; }
@@ -504,7 +523,7 @@ document.addEventListener('submit', async (e) => {
   hasPrev = !!(await kvGet('prev'));
   normSettings(); navigator.storage?.persist?.().catch(() => {});
   auth = await kvGet('auth'); await setLogo(await kvGet('logo'), false);
-  let lastState = ''; AI.onAi((a) => { if (a.state === 'ready' && lastState !== 'ready') setTimeout(warmChat, 50); lastState = a.state; paintEngine(); if (sheet === 'chat') paintChat(); if (tab === 'home' && !sheet) { const p = document.querySelector('.ask .chip'); if (p) p.outerHTML = aiPill(); } });
+  let lastState = ''; AI.onAi((a) => { if (a.state === 'ready' && lastState !== 'ready') setTimeout(warmChat, 50); lastState = a.state; ensureTicker(); paintEngine(); if (sheet === 'chat') paintChat(); paintOrbs(); });
   const vv = window.visualViewport; if (vv) { const u = () => { document.documentElement.style.setProperty('--vvh', vv.height + 'px'); document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px'); }; vv.addEventListener('resize', u); vv.addEventListener('scroll', u); u(); }
   banner(); render(true);
   document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!locked && hiddenAt && Date.now() - hiddenAt > AUTOLOCK_MS) return lockNow(); if (!locked) { checkReminders(); if (tab === 'home' && !sheet) render(); } });

@@ -1,16 +1,16 @@
 # Anna v0.4.0 — test report
 
-Generated 2026-11-18 19:03 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
+Generated 2026-11-18 20:18 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
 
 ## Summary
 
 | Suite | Environment | Result | Run |
 |---|---|---|---|
 | Unit + build tests (`npm test`) | Node 22 | **38/38** ✅ | — |
-| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **135/135** ✅ | 2026-11-18 18:57 (61s) |
-| UI, every screen and control | Chromium desktop 1280×860 | **135/135** ✅ | 2026-11-18 18:58 (51s) |
+| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **140/140** ✅ | 2026-11-18 20:17 (61s) |
+| UI, every screen and control | Chromium desktop 1280×860 | **140/140** ✅ | 2026-11-18 20:18 (51s) |
 | Genuine model end-to-end (fast engine build) | Chromium; model served at the real HF URL from a verified local copy | **30/30** ✅ | 2026-11-18 18:26 (281s) |
-| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **30/30** ✅ | 2026-11-18 19:02 (287s) |
+| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **34/34** ✅ | 2026-11-18 20:15 (269s) |
 | Genuine model end-to-end, downloaded from live huggingface.co | Chromium through the internet | **30/30** ✅ | 2026-11-18 18:36 (289s) |
 | Model download failure paths | Chromium, Safari engine build | **11/11** ✅ | 2026-11-18 18:31 (59s) |
 | Live production site (before this release is deployed) | https://tamanitadiwa-coder.github.io/Anna/ | **8/17** ❌ | 2026-11-18 18:09 (3s) |
@@ -59,22 +59,27 @@ Live test (11.4 s, 3.6 tokens/s): Saving money is useful because it helps indivi
 VERDICT: Ready for offline use. You can turn on Airplane Mode.
 ```
 
-## UI, every screen and control — 135/135
+## UI, every screen and control — 140/140
 
 File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch/UA emulation (layout only, not real Safari or hardware)
 
 <details><summary>All checks</summary>
 
 - ✅ fresh install opens locked: no tabs or data visible
-- ✅ first run greets the owner and asks to create a password
+- ✅ welcome screen: ANNA, orb, "Hey, Jamal.", tagline, Meet ANNA
+- ✅ welcome footer: POWERED BY TAMANY.TECH
+- ✅ Jost font loaded from the app itself (offline)
+- ✅ Meet ANNA opens password setup with a privacy note for the owner
 - ✅ weak password refused
 - ✅ mismatched passwords refused
 - ✅ password created and Anna unlocked
 - ✅ only a PBKDF2 hash is stored (no plaintext password), owner recorded
 - ✅ home greets Jamal by default
 - ✅ five main tabs render
+- ✅ Home: central orb resting, honest status (brain not installed)
+- ✅ pure black background
+- ✅ awake toggle without a model leads to Brain to install it
 - ✅ ZAR is the default currency (R 0,00)
-- ✅ black theme background
 - ✅ tab "home" renders
 - ✅ tab home: no horizontal overflow — 393 vs 393
 - ✅ tab home: all buttons are at least 40×40 px touch targets
@@ -194,7 +199,7 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
 - ✅ custom logo persists after restart
-- ✅ reset logo returns to the default — {"img":0,"svg":1,"h1":"Data & settings"}
+- ✅ reset logo returns to the default orb — {"img":0,"svg":0,"h1":"Data & settings"}
 - ✅ app opens with no internet and no server (service worker cache)
 - ✅ data available offline
 - ✅ diagnostics detect offline
@@ -203,22 +208,27 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 
 </details>
 
-## UI, every screen and control — 135/135
+## UI, every screen and control — 140/140
 
 File: `test-results/ui-desktop.json` · Desktop Chromium
 
 <details><summary>All checks</summary>
 
 - ✅ fresh install opens locked: no tabs or data visible
-- ✅ first run greets the owner and asks to create a password
+- ✅ welcome screen: ANNA, orb, "Hey, Jamal.", tagline, Meet ANNA
+- ✅ welcome footer: POWERED BY TAMANY.TECH
+- ✅ Jost font loaded from the app itself (offline)
+- ✅ Meet ANNA opens password setup with a privacy note for the owner
 - ✅ weak password refused
 - ✅ mismatched passwords refused
 - ✅ password created and Anna unlocked
 - ✅ only a PBKDF2 hash is stored (no plaintext password), owner recorded
 - ✅ home greets Jamal by default
 - ✅ five main tabs render
+- ✅ Home: central orb resting, honest status (brain not installed)
+- ✅ pure black background
+- ✅ awake toggle without a model leads to Brain to install it
 - ✅ ZAR is the default currency (R 0,00)
-- ✅ black theme background
 - ✅ tab "home" renders
 - ✅ tab home: no horizontal overflow — 1280 vs 1280
 - ✅ tab home: all buttons are at least 40×40 px touch targets
@@ -338,7 +348,7 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
 - ✅ custom logo persists after restart
-- ✅ reset logo returns to the default — {"img":0,"svg":1,"h1":"Data & settings"}
+- ✅ reset logo returns to the default orb — {"img":0,"svg":0,"h1":"Data & settings"}
 - ✅ app opens with no internet and no server (service worker cache)
 - ✅ data available offline
 - ✅ diagnostics detect offline
@@ -386,7 +396,7 @@ File: `test-results/ai-real.json`
 
 </details>
 
-## Genuine model end-to-end (Safari engine build) — 30/30
+## Genuine model end-to-end (Safari engine build) — 34/34
 
 File: `test-results/ai-real-safari-engine.json`
 
@@ -399,28 +409,32 @@ File: `test-results/ai-real-safari-engine.json`
 - ✅ stored size is exactly 397808192 bytes — 397808192
 - ✅ SHA-256 of stored file equals published checksum — 6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653
 - ✅ pill says Installed · not loaded
+- ✅ loading shows named stages — Starting the engine → Reading the model → Loading into memory → First test answer
 - ✅ model loaded and marked ready
 - ✅ loaded architecture is qwen2 — qwen2
 - ✅ readiness self-test produced real text — Hello! How can I assist you today?
-- ✅ system prompt + data pre-read in the background after loading — 246 tokens in 43360 ms
+- ✅ system prompt + data pre-read in the background after loading — 246 tokens in 42949 ms
 - ✅ UI shows "Self-test passed"
 - ✅ suggested questions are offered in an empty chat
-- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 42.5s: An emergency fund is a savings account or money market that is set aside for unexpected expenses, such as medical bills or car repairs.
+- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 42.0s: An emergency fund is a savings account specifically set aside for unexpected expenses, such as medical bills or major life changes.
 - ✅ answer is rendered in the chat bubble
-- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.5s: You spent R 450,00 on groceries this month.
+- ✅ orb shows thinking then responding — listen → think → speak
+- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.0s: You spent R 450,00 on groceries this month.
 - ✅ answer is rendered in the chat bubble
+- ✅ orb shows thinking then responding — listen → think → speak
 - ✅ browser reports offline (app server stopped, Hugging Face blocked)
-- ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.0s: Your sister Lindiwe's birthday is on 3 March
-- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 16.5s: 1. Prioritize essential expenses and cut back on non-essential spending. 2. Use a budgeting app to track your spending and ensure you stay on
-- ✅ Stop ends a long answer early and keeps the partial text — 21 chars
+- ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.0s: Your sister Lindiwe’s birthday is on 3 March
+- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 21.5s: 1. Set a budget and stick to it. 2. Review and adjust your budget
+- ✅ Stop ends a long answer early and keeps the partial text — 22 chars
 - ✅ Send is available again after stopping
-- ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe's birthday is on 3 March
+- ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe’s birthday is on 3 March
 - ✅ Unload returns to "Installed · not loaded"
 - ✅ after restart with no internet, Anna opens from the offline cache
 - ✅ conversation history survived the restart — 10
 - ✅ model still installed and verified after restart — cached
-- ✅ model loads again with no internet
-- ✅ OFFLINE answer after restart — 87.5s: 15% of R2000 is R300.
+- ✅ Home "ANNA is awake" toggle loads the model again with no internet
+- ✅ Home shows ANNA awake
+- ✅ OFFLINE answer after restart — 78.0s: 15% of R2000 is R300.
 - ✅ offline diagnostics verdict: ready — VERDICT: Ready for offline use. You can turn on Airplane Mode.
 
 </details>

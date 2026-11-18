@@ -41,7 +41,12 @@ try {
   await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 20000 });
   // ---------- owner lock: first run ----------
   R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0, 'fresh install opens locked: no tabs or data visible');
-  R.ok(/Jamal Tamani/.test(await page.locator('.lockv').innerText()) && await page.locator('form[data-form="setup"]').count() === 1, 'first run greets the owner and asks to create a password');
+  const wtext = await page.locator('.welcome').innerText();
+  R.ok(/ANNA/.test(wtext) && /Hey, Jamal\./.test(wtext) && /Your space\. Your thoughts\. Your ANNA\./.test(wtext) && await page.locator('.welcome .orb').count() === 1 && await page.locator('[data-act="meet"]').innerText() === 'Meet ANNA', 'welcome screen: ANNA, orb, "Hey, Jamal.", tagline, Meet ANNA');
+  R.ok((await page.locator('.powered').innerText()) === 'POWERED BY TAMANY.TECH', 'welcome footer: POWERED BY TAMANY.TECH');
+  R.ok(await page.evaluate(() => document.fonts.check('300 20px Jost')) && /Jost/.test(await page.evaluate(() => getComputedStyle(document.querySelector('.hey')).fontFamily)), 'Jost font loaded from the app itself (offline)');
+  await page.click('[data-act="meet"]');
+  R.ok(/Jamal Tamani/.test(await page.locator('.access').innerText()) && await page.locator('form[data-form="setup"]').count() === 1, 'Meet ANNA opens password setup with a privacy note for the owner');
   await page.fill('[name="pw"]', 'short'); await page.fill('[name="pw2"]', 'short'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/at least 8/.test(await page.locator('.lockv .warn').innerText()), 'weak password refused');
   await page.fill('[name="pw"]', 'anna-test-pass-1'); await page.fill('[name="pw2"]', 'different-pass-1'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/do not match/.test(await page.locator('.lockv .warn').innerText()), 'mismatched passwords refused');
   await ready(page, 20000); R.ok(!(await page.evaluate(() => window.__anna.locked)), 'password created and Anna unlocked');
@@ -50,9 +55,12 @@ try {
   R.ok(/Jamal/.test(await page.locator('h1').innerText()), 'home greets Jamal by default');
   // ---------- first run ----------
   R.ok(await page.locator('#tabs button').count() === 5, 'five main tabs render');
-  R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)');
-  R.ok(/rgb\((1[0-9]|[0-9]), (1[0-9]|[0-9]), (1[0-9]|[0-9])\)/.test(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)), 'black theme background');
-  for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
+  await page.waitForFunction(() => /not available|not installed/.test(document.querySelector('#pstatus')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  R.ok(await page.locator('.presence .orb[data-s="off"]').count() === 1 && /not available|not installed/.test(await page.locator('#pstatus').innerText()), 'Home: central orb resting, honest status (no WebGPU here: AI brain not available)');
+  R.ok(await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(0, 0, 0)', 'pure black background');
+  await page.click('#awake'); await page.waitForTimeout(300); R.ok(/not available|Download/.test(await page.locator('#toast').innerText()), 'awake toggle explains why the AI cannot start here', await page.locator('#toast').innerText()); await tabTo('home');
+  await tabTo('money'); R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)'); await tabTo('home');
+    for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
   await page.click('.top [data-tab="data"]'); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'Settings opens from the gear button'); await layoutOk('settings');
   // ---------- tasks ----------
   await tabTo('tasks'); await page.click('[data-act="open"][data-id="task"]'); await layoutOk('new-task sheet');
@@ -139,7 +147,7 @@ try {
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="fb-down"]'); s = await S(); R.ok(s.mem.find((m) => /amoxicillin/.test(m.content)).incorrect_count === 1, '"Not right" feedback recorded');
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="del"]'); s = await S(); R.ok(s.mem.length === 1, 'delete memory');
   const sw = page.locator('.swrow:has-text("Money") .sw'); const before = await sw.getAttribute('aria-checked'); await sw.click(); R.ok((await sw.getAttribute('aria-checked')) !== before, 'privacy switch toggles'); await page.locator('.swrow:has-text("Money") .sw').click();
-  await page.click('details summary'); await layoutOk('brain with Advanced open'); const gpu = page.locator('.swrow:has-text("GPU") .sw'); await gpu.click(); R.ok(await gpu.getAttribute('aria-checked') === 'true', 'GPU switch toggles and is not covered by its label');
+  await page.click('details summary'); await layoutOk('brain with Advanced open');
   await page.click('[data-act="ctx-open"]'); const ctxText = await page.locator('#sheet pre').innerText(); R.ok(/Groceries/.test(ctxText) && /VAT number/.test(ctxText) && !/Mokoena/.test(ctxText) && !/Checkers/.test(ctxText), '"What Anna sees" shows data but never notes or customer names'); await page.click('#sheet [data-act="close"] >> nth=-1');
   // chat without a model
   await tabTo('home'); await page.click('.ask'); R.ok(/can’t answer yet/.test(await page.locator('#chatmain').innerText()), 'chat explains the AI is not installed'); R.ok(await page.locator('#send').isDisabled(), 'Send is disabled until the AI is ready');
@@ -152,7 +160,7 @@ try {
   await page.click('.top [data-tab="data"]'); await page.fill('#nm', 'Tamani'); await page.click('[data-act="prefs"]'); await tabTo('home'); R.ok(/Tamani/.test(await page.locator('h1').innerText()), 'name preference shows in greeting');
   await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', '$'); await page.click('[data-act="prefs"]'); await tabTo('money'); R.ok(/^\$/.test(await page.locator('.hero .big').innerText()), 'currency can be changed'); await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', 'R'); await page.click('[data-act="prefs"]');
   await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 });
-  const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache wllama 3\.5\.1 \(4\/4 files\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
+  const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache WebLLM 0\.2\.87 \(1 file\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
   R.ok(/Not fully ready.*Install the AI model/.test(dg), 'diagnostics verdict explains what is missing (no model yet)');
   // backup → erase → restore
   const before2 = await S(); const d2 = page.waitForEvent('download'); await page.click('[data-act="export"]'); const bk = await d2; const bkPath = await bk.path(), bkText = readFileSync(bkPath, 'utf8'), env = JSON.parse(bkText);
@@ -182,7 +190,7 @@ try {
   R.ok(await page.locator('.brand img.ulogo').count() === 1 && /^data:image\/png/.test(await page.locator('.brand img.ulogo').getAttribute('src')), 'uploaded logo replaces the brand logo');
   R.ok(/^data:image\/png/.test(await page.evaluate(() => document.querySelector('link[rel="apple-touch-icon"]').href)), 'uploaded logo is used as the Home Screen icon for new installs');
   // ---------- lock now / change password ----------
-  await page.click('[data-act="lock"]'); R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0 && await page.locator('.lockv img.biglogo').count() === 1, 'Lock now hides everything and shows the owner logo');
+  await page.click('[data-act="lock"]'); R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0 && await page.locator('.access img.biglogo').count() === 1, 'Lock now hides everything and shows the owner logo');
   await page.fill('form[data-form="unlock"] [name="pw"]', 'wrong-password-1'); await page.click('form[data-form="unlock"] button'); await page.waitForTimeout(800); R.ok(/Wrong password/.test(await page.locator('.lockv').innerText()) && await page.evaluate(() => window.__anna.locked), 'wrong password does not unlock');
   await ready(page); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'unlock returns to the page you were on'); await page.click('[data-act="open"][data-id="chpw"]');
   await page.fill('[name="old"]', 'nope-nope-1'); await page.fill('[name="pw"]', 'new-pass-word-2'); await page.fill('[name="pw2"]', 'new-pass-word-2'); await page.click('form[data-form="chpw"] button'); await page.waitForTimeout(800); R.ok(/Current password is wrong/.test(await toastText()), 'change password requires the current password');
@@ -194,7 +202,7 @@ try {
   const after = await S(); R.ok(JSON.stringify(after) === snap, 'all data identical after closing and reopening the browser (IndexedDB)');
   R.ok(after.settings.name === 'Tamani' && after.settings.currency === 'R', 'settings persist');
   R.ok(await page.locator('.brand img.ulogo').count() === 1, 'custom logo persists after restart');
-  await page.click('.top [data-tab="data"]'); await page.click('[data-act="logo-reset"]'); await page.waitForSelector('.brand svg', { timeout: 5000 }).catch(() => {}); R.ok(await page.locator('.brand img.ulogo').count() === 0 && await page.locator('.brand svg').count() === 1, 'reset logo returns to the default', JSON.stringify({ img: await page.locator('.brand img.ulogo').count(), svg: await page.locator('.brand svg').count(), h1: await page.locator('h1').innerText() }));
+  await page.click('.top [data-tab="data"]'); await page.click('[data-act="logo-reset"]'); await page.waitForSelector('.brand .orb', { timeout: 5000 }).catch(() => {}); R.ok(await page.locator('.brand img.ulogo').count() === 0 && await page.locator('.brand .orb').count() === 1, 'reset logo returns to the default orb', JSON.stringify({ img: await page.locator('.brand img.ulogo').count(), svg: await page.locator('.brand svg').count(), h1: await page.locator('h1').innerText() }));
   // ---------- offline app shell ----------
   await page.evaluate(() => navigator.serviceWorker.ready); await ctx.close(); srv.closeAllConnections?.(); await new Promise((r) => srv.close(r));
   ({ ctx, page } = await open()); await ctx.setOffline(true); await page.goto(url).catch(() => {}); const off = await ready(page, 20000).then(() => true, () => false);

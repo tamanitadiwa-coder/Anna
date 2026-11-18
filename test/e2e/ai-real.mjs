@@ -32,11 +32,13 @@ async function open() {
 const st = (page) => page.evaluate(() => ({ state: window.__anna.AI.ai.state, error: window.__anna.AI.ai.error, info: window.__anna.AI.ai.info, busy: window.__anna.AI.ai.busy }));
 const waitState = (page, want, ms) => page.waitForFunction((w) => w.includes(window.__anna?.AI.ai.state), want, { timeout: ms, polling: 500 });
 async function ask(page, q) {
+  await page.evaluate(() => { window.__orbs = new Set(); window.__orbObs?.disconnect(); const rec = () => { const o = document.querySelector('.chat .orb'); if (o) window.__orbs.add(o.dataset.s); }; window.__orbObs = new MutationObserver(rec); window.__orbObs.observe(document.getElementById('sheet'), { attributes: true, childList: true, subtree: true }); });
   const before = await page.evaluate(() => window.__anna.S.chat.length);
   await page.fill('.chatin textarea', q); await page.click('#send'); const t0 = Date.now();
   await page.waitForFunction((n) => { const c = window.__anna.S.chat; return c.length >= n + 2 && !window.__anna.AI.ai.busy && c.at(-1).at; }, before, { timeout: 300000, polling: 500 });
   const a = await page.evaluate(() => window.__anna.S.chat.at(-1)), shown = await page.locator('.bub.assistant').last().innerText();
-  return { text: a.content, error: a.error, ms: Date.now() - t0, shown };
+  const orbs = await page.evaluate(() => [...(window.__orbs || [])]);
+  return { text: a.content, error: a.error, ms: Date.now() - t0, shown, orbs };
 }
 const evidence = { model: { ...MODEL }, engine: safari ? 'compat build (Safari path, JSPI hidden)' : 'default build', source: realHF ? 'live huggingface.co' : 'local copy served at the real Hugging Face URL', answers: [] };
 try {
@@ -56,7 +58,9 @@ try {
   evidence.downloadSeconds = Math.round((Date.now() - t) / 1000);
   R.ok((await page.locator('#pill').innerText()) === 'Installed · not loaded', 'pill says Installed · not loaded');
   // 3: load + self-test
+  await page.evaluate(() => { window.__stages = new Set(); const iv = setInterval(() => { const a = window.__anna.AI.ai; if (a.stage) window.__stages.add(a.stage); if (a.state !== 'loading' && window.__stages.size) clearInterval(iv); }, 50); });
   t = Date.now(); await page.click('[data-act="ai-load"]'); await waitState(page, ['ready', 'cached', 'absent'], 300000); s = await st(page);
+  const stages = await page.evaluate(() => [...window.__stages]); R.ok(stages.includes('Loading into memory') && stages.includes('First test answer'), 'loading shows named stages', stages.join(' → '));
   R.ok(s.state === 'ready', 'model loaded and marked ready', s.error); R.ok(s.info.arch === 'qwen2', 'loaded architecture is qwen2', s.info.arch);
   R.ok(!!s.info.selfTest?.reply, 'readiness self-test produced real text', s.info.selfTest?.reply); evidence.load = { seconds: Math.round((Date.now() - t) / 1000), selfTest: s.info.selfTest, modelName: s.info.modelName };
   await page.waitForFunction(() => window.__anna.AI.ai.info.warmMs, null, { timeout: 300000, polling: 500 }).catch(() => {}); s = await st(page); R.ok(s.info.warmTokens > 50, 'system prompt + data pre-read in the background after loading', `${s.info.warmTokens} tokens in ${s.info.warmMs} ms`); evidence.warm = { tokens: s.info.warmTokens, ms: s.info.warmMs };
@@ -69,6 +73,7 @@ try {
     const a = await ask(page, q); evidence.answers.push({ phase: 'online', q, ...a });
     R.ok(a.text && !a.error && a.text.length > 5, `ONLINE answer to "${q}"`, `${(a.ms / 1000).toFixed(1)}s: ${a.text || a.error}`);
     R.ok(a.shown.includes(a.text.slice(0, 20)), 'answer is rendered in the chat bubble');
+    R.ok(a.orbs.includes('think') && a.orbs.includes('speak'), 'orb shows thinking then responding', a.orbs.join(' → '));
   }
   // 5-6: disconnect the internet entirely: stop the app server AND block Hugging Face
   internet = false; srv.closeAllConnections?.(); await new Promise((r) => srv.close(r)); if (cdn) { cdn.srv.closeAllConnections?.(); await new Promise((r) => cdn.srv.close(r)); } await ctx.setOffline(true);
@@ -95,8 +100,9 @@ try {
     R.ok((await page.evaluate(() => window.__anna.S.chat.length)) === chatLen, 'conversation history survived the restart', chatLen);
     await page.click('[data-tab="brain"]'); await waitState(page, ['cached', 'absent', 'partial'], 60000); s = await st(page);
     R.ok(s.state === 'cached' && s.info.verified, 'model still installed and verified after restart', s.state);
-    await page.click('[data-act="ai-load"]'); await waitState(page, ['ready', 'cached', 'absent'], 300000); s = await st(page);
-    R.ok(s.state === 'ready', 'model loads again with no internet', s.error);
+    await page.click('#tabs [data-tab="home"]'); await page.click('#awake'); await waitState(page, ['ready', 'cached', 'absent'], 300000); s = await st(page);
+    R.ok(s.state === 'ready', 'Home "ANNA is awake" toggle loads the model again with no internet', s.error);
+    R.ok(await page.locator('.presence .orb').getAttribute('data-s') === 'rest' && /Awake/.test(await page.locator('#pstatus').innerText()), 'Home shows ANNA awake');
     await page.click('[data-act="chat-open"] >> nth=0');
     const a = await ask(page, 'What is 15% of R2000? Answer briefly.'); evidence.answers.push({ phase: 'offline after restart', q: 'What is 15% of R2000?', ...a });
     R.ok(a.text && !a.error, 'OFFLINE answer after restart', `${(a.ms / 1000).toFixed(1)}s: ${a.text || a.error}`);
