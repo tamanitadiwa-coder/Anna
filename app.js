@@ -2,7 +2,8 @@
 // Same IndexedDB database and backup format as v0.1–v0.3 (additive fields only), so no data is lost on update.
 import * as L from './logic.js';
 import * as AI from './ai.js';
-export const VERSION = '0.4.0';
+import * as A from './auth.js';
+export const VERSION = '0.4.1';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -21,6 +22,7 @@ async function kvSet(k, v) {
 }
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
+let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
 let S = L.emptyState(), tab = 'home', sheet = null, editId = null, taskView = 'today', memCat = 'All', memQ = '', bizQ = '', saveErr = '', SOD = 0, EOD = 0, diag = '', pendingRestore = null, hasPrev = false, undo = null;
 const save = async () => { try { S.chat = S.chat.slice(-300); await kvSet('state', S); saveErr = ''; } catch (e) { saveErr = String(e); } };
 const mutate = async (fn, { close = true } = {}) => { fn(); if (close) { sheet = null; editId = null; } render(); await save(); if (saveErr) render(); };
@@ -31,7 +33,7 @@ const dtstr = (t) => new Date(t).toLocaleString('en-ZA', { weekday: 'short', mon
 const tstr = (t) => new Date(t).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
 const ago = (t) => { const m = Math.round((Date.now() - t) / 6e4); return m < 1 ? 'just now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; };
 const normSettings = () => {
-  const s = S.settings; s.currency ||= L.DEFAULT_CURRENCY;
+  const s = S.settings; s.currency ||= L.DEFAULT_CURRENCY; s.owner = A.OWNER.name; if (s.name === undefined || s.name === null) s.name = '';
   // v0.4.0: everything stays on this device, so Anna may read your data by default (switch off any category in Brain).
   if (!s.aiDefaultsV4) { s.ai = { ...(s.ai || {}), tasks: true, money: true, biz: true, mem: true }; s.aiDefaultsV4 = 1; }
   s.ai = { tasks: true, money: true, biz: true, mem: true, gpu: false, ...(s.ai || {}) };
@@ -61,7 +63,8 @@ const six = () => Array.from({ length: 6 }, (_, i) => { const d = new Date(); d.
 const logo = '<svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F4F5F7"/><stop offset=".5" stop-color="#C4C8CE"/><stop offset="1" stop-color="#7E848C"/></linearGradient></defs><circle cx="16" cy="16" r="15" fill="#0B0B0D" stroke="url(#lg)" stroke-width="1.2"/><text x="16" y="22" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-weight="700" font-size="17" fill="url(#lg)">A</text></svg>';
 
 // ---- shared pieces ----
-const top = () => `<div class="top"><div class="brand">${logo}Anna</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
+const brandLogo = (cls = 'ulogo') => (logoUrl ? `<img class="${cls}" src="${logoUrl}" alt="Anna logo">` : cls === 'ulogo' ? logo : `<div class="${cls}">${logo}</div>`);
+const top = () => `<div class="top"><div class="brand">${brandLogo()}Anna</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
 const title = (eye, t, sub) => `<div><div class="eyebrow">${eye}</div><h1>${t}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 const sh = (t, link = '') => `<div class="sh"><h2>${t}</h2>${link}</div>`;
 const more = (tb, txt = 'See all') => `<button class="link" data-tab="${tb}">${txt}</button>`;
@@ -96,7 +99,7 @@ const aiPill = () => { const a = AI.ai; return a.state === 'ready' ? '<span clas
 const TABS = [['home', 'Home'], ['tasks', 'Tasks'], ['money', 'Money'], ['biz', 'Business'], ['brain', 'Brain']];
 const screens = {
   home() {
-    const m = L.monthSummary(S), b = L.businessSummary(S), g = tasksOf(), h = new Date().getHours(), nm = (S.settings.name || '').trim(), rem = L.pendingReminders(S).slice(0, 3);
+    const m = L.monthSummary(S), b = L.businessSummary(S), g = tasksOf(), h = new Date().getHours(), nm = (S.settings.name || A.OWNER.name.split(' ')[0]).trim(), rem = L.pendingReminders(S).slice(0, 3);
     const dueSoon = S.bills.filter((x) => !x.paid && x.due_at < Date.now() + 7 * 864e5).length, over = L.budgetStatus(S).filter((x) => x.over).length;
     const bits = [`${g.today.length} priorit${g.today.length === 1 ? 'y' : 'ies'} today`, rem.length ? `${L.pendingReminders(S).length} reminder${L.pendingReminders(S).length > 1 ? 's' : ''}` : '', dueSoon ? `${dueSoon} bill${dueSoon > 1 ? 's' : ''} due this week` : '', over ? `${over} budget${over > 1 ? 's' : ''} over` : ''].filter(Boolean).join(' · ');
     const mo = six().map((x) => { const s = L.monthSummary(S, x.t); return { l: x.l, a: s.income, b: s.expense }; }), act = activity();
@@ -171,8 +174,12 @@ const screens = {
     const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
     const curOpts = [['R', 'R — South African rand'], ['$', '$ — US dollar'], ['€', '€ — euro'], ['£', '£ — pound']];
     const isCustom = !curOpts.some(([k]) => k === cur());
-    return `<div class="top"><div class="brand">${logo}Settings</div><button class="ib" data-tab="home" aria-label="Close settings">${ic('x')}</button></div>` + title('Your data', 'Data & settings', 'Everything stays on this device.') +
-      `<div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups include tasks, reminders, money, business, memories, chat history and settings (not the AI model).</div>
+    return `<div class="top"><div class="brand">${brandLogo()}Settings</div><button class="ib" data-tab="home" aria-label="Close settings">${ic('x')}</button></div>` + title('Your data', 'Data & settings', 'Everything stays on this device.') +
+      `<div class="card"><h2>Owner & security</h2><div class="status"><b>Original owner</b><span>${esc(A.OWNER.name)}</span><b>Password</b><span>Set ${auth ? new Date(auth.changed_at).toLocaleDateString('en-ZA') : ''} · stored only as a PBKDF2 hash</span><b>Auto-lock</b><span>after 5 minutes in the background</span></div>
+        <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="lock">Lock now</button><button class="btn sage sm" data-act="open" data-id="chpw">Change password</button></div></div>
+      <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
+        <div class="row wrap"><button class="btn sm" data-act="logo-pick">${logoUrl ? 'Replace logo…' : 'Upload logo…'}</button>${logoUrl ? '<button class="btn sage sm" data-act="logo-reset">Reset to default</button>' : ''}</div><input id="logofile" type="file" accept="image/*" hidden></div>
+      <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
         <div class="row"><button class="btn grow" data-act="export">Export backup</button><button class="btn sage grow" data-act="import">Restore…</button></div><input id="file" type="file" accept="application/json,.json" hidden>
         ${hasPrev ? '<button class="link" data-act="undo-restore">Undo last restore / erase</button>' : ''}<div class="mute" style="margin-top:8px">${esc(L.describeCounts(L.counts(S)))}</div></div>
       <div class="card"><h2>Preferences</h2><label class="f"><span>Your name</span><input id="nm" value="${esc(S.settings.name || '')}" maxlength="40" placeholder="For your greeting" autocomplete="given-name"></label>
@@ -241,7 +248,8 @@ function chatPanel() {
     <form data-form="chat" class="chatin"><textarea name="msg" rows="1" placeholder="${AI.ai.state === 'ready' ? 'Ask Anna…' : 'Load the AI to ask a question'}" maxlength="800" required aria-label="Message"></textarea>${busy ? `<button type="button" class="btn sage" data-act="chat-stop" aria-label="Stop">${ic('stop')}</button>` : `<button class="btn" id="send" ${AI.ai.state === 'ready' ? '' : 'disabled'}>Send</button>`}</form></div>`;
 }
 const ctxPanel = () => `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="What Anna sees"><div class="gr"></div><div class="row"><h2 class="grow">What Anna sees</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:6px 0 10px">This is the complete data block given to the local model with each question (memories are picked by relevance to your question). It never leaves your device.</div><pre class="diag">${esc(AI.buildContext(S, S.settings.ai))}</pre></div>`;
-const restorePanel = () => { const r = pendingRestore; if (!r) return ''; const a = L.counts(r.state), b = L.counts(S);
+const restorePanel = () => { const r = pendingRestore; if (!r) return '';
+  if (r.env && !r.state) return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Restore backup"><div class="gr"></div><div class="row"><h2 class="grow">Encrypted backup</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:8px 0">${esc(r.name)} · enter the password that was used when this backup was made.</div><form data-form="restorepw" novalidate>${fld('Backup password', '<input name="pw" type="password" autocomplete="current-password" required>')}<button class="btn full" style="margin-top:12px">Open backup</button></form></div>`; const a = L.counts(r.state), b = L.counts(S);
   return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Restore backup"><div class="gr"></div><div class="row"><h2 class="grow">Restore this backup?</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="mute" style="margin:8px 0">File: ${esc(r.name)}${r.state.exported_at ? ' · exported ' + esc(new Date(r.state.exported_at).toLocaleString('en-ZA')) : ''}</div>
   <div class="status"><b>Backup</b><span>${esc(L.describeCounts(a))}</span><b>On this device now</b><span>${esc(L.describeCounts(b))}</span></div>
@@ -280,9 +288,11 @@ const FORMS = {
   biz: (r = {}) => [r.id ? 'Edit business record' : 'Business record', `<div class="two">${fld('Type', `<select name="kind">${opt('sale', 'Sale', r.kind || 'sale')}${opt('expense', 'Expense', r.kind)}${opt('invoice', 'Invoice', r.kind)}</select>`)}${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${r.id ? val(L.centsToInput(r.amount_cents)) : ''}>`)}</div>${fld('Description', `<input name="description" placeholder="What was it for?" maxlength="200" required ${val(r.description)}>`)}${fld('Customer / supplier', `<input name="party" placeholder="Optional" maxlength="80" ${val(r.party)}>`)}<div class="two">${fld('Date', `<input name="date" type="date" required ${val(L.tsToDay(r.occurred_at || Date.now()))}>`)}${fld('Invoice status', `<select name="status">${opt('unpaid', 'Unpaid', r.status || 'unpaid')}${opt('paid', 'Paid', r.status)}</select>`)}</div>${fld('Notes', `<textarea name="notes" rows="2" placeholder="Optional" maxlength="500">${esc(r.notes || '')}</textarea>`)}<div class="mute">Invoice status only applies to invoices.</div>`, r.id ? 'Save record' : 'Save record'],
   mem: (r = {}) => [r.id ? 'Edit memory' : 'Remember', `${fld('Memory', `<textarea name="content" rows="3" placeholder="e.g. I do my best work in the morning" maxlength="500" required>${esc(r.content || '')}</textarea>`)}<div class="two">${fld('Confidence', `<select name="status">${opt('confirmed', 'Confirmed', r.status || 'confirmed')}${opt('temporary', 'Temporary', r.status)}${opt('assumption', 'Assumption', r.status)}</select>`)}${fld('Category', `<input name="category" maxlength="40" list="mcats" ${val(r.category || 'General')}>`)}</div>${catList('mcats', [...S.mem.map((m) => m.category), 'General', 'Personal', 'Work', 'Health', 'Family', 'Money'])}<div class="mute">Assumptions are never shown to the AI.</div>`, r.id ? 'Save memory' : 'Remember'],
 };
+FORMS.chpw = () => ['Change password', `${fld('Current password', '<input name="old" type="password" autocomplete="current-password" required>')}${fld('New password (at least 8 characters)', '<input name="pw" type="password" autocomplete="new-password" required>')}${fld('Repeat new password', '<input name="pw2" type="password" autocomplete="new-password" required>')}<div class="mute">Backups made before the change still open with the old password.</div>`, 'Change password'];
 const KEY = { task: 'tasks', reminder: 'reminders', tx: 'tx', bill: 'bills', budget: 'budgets', biz: 'biz', mem: 'mem' };
 const NAME = { task: 'Task', reminder: 'Reminder', tx: 'Entry', bill: 'Bill', budget: 'Budget', biz: 'Record', mem: 'Memory' };
 function render(anim) {
+  if (locked) { $('#screen').innerHTML = lockScreen(); $('#tabs').innerHTML = ''; $('#sheet').innerHTML = (sheet === 'chpw' ? '' : ''); document.body.classList.remove('lock'); return; }
   const now = new Date(); SOD = new Date(now).setHours(0, 0, 0, 0); EOD = SOD + 864e5;
   const el = $('#screen'), y = scrollY; el.innerHTML = screens[tab]();
   if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); } else scrollTo(0, y);
@@ -368,11 +378,11 @@ const actions = {
   pay: (id) => { const b = byId(S.bills, id); const rec = confirm(`Mark “${b.name}” as paid and record ${L.fmt(b.amount_cents, cur())} as an expense in Money?\n\nOK = paid + record expense\nCancel = just mark paid`); mutate(() => L.payBill(S, id, { recordExpense: rec }), { close: false }); toast(b.repeat_monthly ? `Paid. Next due ${dstr(b.due_at)}.` : 'Marked paid.'); },
   unpay: (id) => mutate(() => L.unpayBill(S, id), { close: false }),
   'inv-paid': (id) => mutate(() => { const r = byId(S.biz, id); r.status = 'paid'; r.paid_at = Date.now(); }, { close: false }),
-  export: async () => { const data = { ...S, exported_at: Date.now(), app_version: VERSION }, name = `anna-backup-${L.tsToDay(Date.now())}.json`; const r = await download(name, JSON.stringify(data, null, 1), 'application/json'); if (r !== 'cancelled') { S.settings.last_backup_at = Date.now(); save(); toast(`Backup ready: ${L.describeCounts(L.counts(S))}.`, { ms: 5000 }); } },
+  export: async () => { if (!auth || !bkKey) return toast('Unlock Anna first.'); const env = await A.encryptBackup({ ...S, logo: logoUrl, exported_at: Date.now(), app_version: VERSION }, auth, bkKey), name = `anna-backup-${L.tsToDay(Date.now())}.json`; const r = await download(name, JSON.stringify(env), 'application/json'); if (r !== 'cancelled') { S.settings.last_backup_at = Date.now(); save(); toast(`Backup ready: ${L.describeCounts(L.counts(S))}.`, { ms: 5000 }); } },
   import: () => $('#file').click(),
   'restore-confirm': async () => {
     const r = pendingRestore; if (!r) return; pendingRestore = null; sheet = null;
-    await kvSet('prev', S); hasPrev = true; S = r.state; delete S.exported_at; delete S.app_version; normSettings(); await save();
+    await kvSet('prev', S); hasPrev = true; S = r.state; if (S.logo !== undefined) { await setLogo(S.logo || null); } delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
     const check = L.validateBackup(await kvGet('state')), want = JSON.stringify(L.counts(r.state)), got = check.ok ? JSON.stringify(L.counts(check.state)) : '';
     render(true); toast(got === want ? `Restored and verified: ${L.describeCounts(L.counts(S))}.` : 'Restore saved, but verification did not match. Export a backup and check your data.', { alert: true, ms: 8000 });
   },
@@ -380,6 +390,11 @@ const actions = {
   prefs: () => { const sel = $('#cursel').value, c = sel === 'custom' ? ($('#cur').value || '').trim().slice(0, 5) : sel; mutate(() => { S.settings.currency = c || L.DEFAULT_CURRENCY; S.settings.name = ($('#nm').value || '').trim().slice(0, 40); }); toast('Preferences saved.'); },
   notif: async () => { try { const p = await Notification.requestPermission(); render(); if (p === 'granted') notify('Anna', 'Reminder alerts are on.'); } catch { toast('This browser cannot show notifications. Open Anna from the Home Screen icon.'); } },
   'notif-test': async () => { const ok = await notify('Anna', 'This is how reminders will look.'); toast(ok ? 'Test alert sent.' : 'Could not show a notification.'); },
+  lock: () => lockNow(),
+  'logo-pick': () => $('#logofile').click(),
+  'logo-reset': async () => { await setLogo(null); render(); toast('Default logo restored.'); },
+  'reset-anna': async () => { if (prompt('This deletes ALL Anna data, your password and logo on this device. Your encrypted backups still need the old password. Type ERASE to continue.') !== 'ERASE') return; for (const k of ['state', 'prev', 'auth', 'logo']) await kvSet(k, null); try { localStorage.removeItem('anna-web:fails'); } catch {} location.reload(); },
+  'setup-restore': () => $('#sfile').click(),
   erase: async () => { if (confirm('Erase ALL Anna data on this device (tasks, reminders, money, business, memories, chat)? Export a backup first.') && confirm('Really erase everything? (A safety copy is kept so you can undo once.)')) { await kvSet('prev', S); hasPrev = true; S = L.emptyState(); normSettings(); await save(); tab = 'home'; render(true); toast('All data erased.', { action: { label: 'Undo', fn: () => actions['undo-restore']() } }); } },
 };
 document.addEventListener('click', (e) => {
@@ -394,8 +409,13 @@ document.addEventListener('input', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && e.target.matches('.chatin textarea') && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); e.target.form.requestSubmit(); } if (e.key === 'Escape' && sheet) actions.close(); });
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'cursel') { $('#curwrap').hidden = e.target.value !== 'custom'; return; }
+  if (e.target.id === 'logofile' && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; try { await setLogo(await shrinkImage(f)); render(); toast('Logo saved.'); } catch { toast('That image could not be read. Try a PNG or JPG.'); } return; }
+  if (e.target.id === 'sfile' && e.target.files[0]) { const f = e.target.files[0]; e.target.value = ''; pendingFile = { name: f.name, text: await f.text() }; render(); return; }
   if (e.target.id !== 'file' || !e.target.files[0]) return;
-  const file = e.target.files[0], r = L.validateBackup(await file.text()); e.target.value = '';
+  const file = e.target.files[0], text = await file.text(); e.target.value = '';
+  let env; try { env = JSON.parse(text); } catch { return toast('That file is not valid JSON.', { alert: true, ms: 6000 }); }
+  if (env?.encrypted) { if (env.owner && env.owner !== A.OWNER.name) return toast('This backup belongs to a different owner.', { alert: true }); pendingRestore = { name: file.name, env }; sheet = 'restore'; return render(); }
+  const r = L.validateBackup(env);
   if (!r.ok) return toast(r.error, { alert: true, ms: 6000 });
   pendingRestore = { name: file.name, state: r.state }; sheet = 'restore'; render();
 });
@@ -422,17 +442,72 @@ document.addEventListener('submit', (e) => {
   if (k === 'biz') { const inv = f.kind === 'invoice', paid = !inv || f.status === 'paid', at = sameDay(f.date, rec?.occurred_at); return up({ kind: f.kind, party: f.party.trim() || null, description: f.description.trim(), notes: f.notes.trim() || null, amount_cents: cents, status: paid ? 'paid' : 'unpaid', occurred_at: at, paid_at: paid ? (inv ? rec?.paid_at || now : at) : null }); }
 });
 
+// ---- owner lock (auth.js does the crypto) ----
+const AUTOLOCK_MS = 5 * 6e4;
+let pendingFile = null;
+const fails = () => { try { return JSON.parse(localStorage.getItem('anna-web:fails') || '{"n":0,"until":0}'); } catch { return { n: 0, until: 0 }; } };
+const setFails = (f) => { try { localStorage.setItem('anna-web:fails', JSON.stringify(f)); } catch {} };
+function lockScreen() {
+  const head = `<div class="lockv">${brandLogo('biglogo')}<h1>Anna</h1><div class="sub">Private assistant of ${esc(A.OWNER.name)}</div>`;
+  const msg = lockMsg ? `<div class="warn">${esc(lockMsg)}</div>` : '';
+  if (!auth) return head + `<div class="card" style="text-align:left;width:100%"><h2>Welcome, ${esc(A.OWNER.name.split(' ')[0])}</h2><div class="mute" style="margin:6px 0">Create the password that protects your conversations, memories and records on this device. It is never stored or sent anywhere, only a secure hash of it.</div>${msg}
+    <form data-form="setup" novalidate>${fld('New password (at least 8 characters)', '<input name="pw" type="password" autocomplete="new-password" required>')}${fld('Repeat password', '<input name="pw2" type="password" autocomplete="new-password" required>')}<button class="btn full" style="margin-top:12px">Create password</button></form>
+    <div class="sh"><h2>Moving from another device?</h2></div><div class="mute">Restore an encrypted Anna backup. Its password becomes this device’s password.</div>
+    ${pendingFile ? `<form data-form="setuprestore" novalidate><div class="mute" style="margin-top:8px">File: ${esc(pendingFile.name)}</div>${fld('Backup password', '<input name="pw" type="password" autocomplete="current-password" required>')}<button class="btn full" style="margin-top:12px">Restore and unlock</button></form>` : '<button class="btn sage full" style="margin-top:10px" data-act="setup-restore">Choose backup file…</button>'}<input id="sfile" type="file" accept="application/json,.json" hidden></div></div>`;
+  const f = fails(), wait = Math.max(0, f.until - Date.now());
+  return head + `<div class="card" style="text-align:left;width:100%"><h2>Unlock</h2>${msg}${wait ? `<div class="note">Too many wrong passwords. Try again in ${Math.ceil(wait / 1000)} s.</div>` : ''}
+    <form data-form="unlock" novalidate>${fld('Password', '<input name="pw" type="password" autocomplete="current-password" required autofocus>')}<button class="btn full" style="margin-top:12px" ${wait ? 'disabled' : ''}>Unlock</button></form>
+    <details style="margin-top:10px"><summary class="mute" style="min-height:44px;display:flex;align-items:center">Forgot password?</summary><div class="mute">There is no way to recover it: that is what keeps your data private. You can reset Anna on this device (all data here is deleted) and then restore an encrypted backup if you remember its password.</div><button class="btn bad full" style="margin-top:8px" data-act="reset-anna">Reset Anna on this device</button></details></div></div>`;
+}
+async function unlocked(pw) {
+  bkKey = await A.backupKey(auth, pw); locked = false; lockMsg = ''; pendingFile = null; setFails({ n: 0, until: 0 });
+  render(true);
+  if (!started) { started = true; await save(); AI.refresh(); checkReminders(); setInterval(() => { if (!locked) checkReminders(); }, 15000); }
+}
+function lockNow() { locked = true; bkKey = null; sheet = null; editId = null; pendingRestore = null; diag = ''; render(true); }
+async function setLogo(url, persist = true) {
+  logoUrl = url || null; if (persist) await kvSet('logo', logoUrl);
+  for (const [rel, def] of [['apple-touch-icon', 'icons/apple-touch-icon.png'], ['icon', 'icons/icon-192.png']]) { const l = document.querySelector(`link[rel="${rel}"]`); if (l) l.href = logoUrl || def; }
+}
+// Scales an uploaded image to at most 512 px (keeps the aspect ratio) and stores it as PNG.
+async function shrinkImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight)), w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+    const c = Object.assign(document.createElement('canvas'), { width: w, height: h }); c.getContext('2d').drawImage(img, 0, 0, w, h); return c.toDataURL('image/png');
+  } finally { URL.revokeObjectURL(url); }
+}
+const AUTHFORMS = new Set(['setup', 'unlock', 'setuprestore', 'restorepw', 'chpw']);
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest('form[data-form]'); if (!form || !AUTHFORMS.has(form.dataset.form)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const f = Object.fromEntries(new FormData(form)), k = form.dataset.form, btn = form.querySelector('button'); if (btn) btn.disabled = true;
+  try {
+    if (k === 'setup') { if (f.pw !== f.pw2) throw new Error('The two passwords do not match.'); auth = await A.createAuth(f.pw); await kvSet('auth', auth); return unlocked(f.pw); }
+    if (k === 'unlock') { const fl = fails(); if (fl.until > Date.now()) return render(); if (await A.verifyPassword(auth, f.pw)) return unlocked(f.pw); fl.n++; fl.until = Date.now() + A.lockoutMs(fl.n); setFails(fl); throw new Error('Wrong password.'); }
+    if (k === 'setuprestore') {
+      const env = JSON.parse(pendingFile.text); if (!env.encrypted) throw new Error('Choose an encrypted Anna backup (made with v0.4.1 or later).'); if (env.owner && env.owner !== A.OWNER.name) throw new Error('This backup belongs to a different owner.');
+      const r = L.validateBackup(await A.decryptBackup(env, f.pw)); if (!r.ok) throw new Error(r.error);
+      auth = env.auth; await kvSet('auth', auth); S = r.state; await setLogo(S.logo || null); delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
+      await unlocked(f.pw); return toast(`Restored: ${L.describeCounts(L.counts(S))}.`, { alert: true, ms: 7000 });
+    }
+    if (k === 'restorepw') { const r = L.validateBackup(await A.decryptBackup(pendingRestore.env, f.pw)); if (!r.ok) throw new Error(r.error); pendingRestore = { name: pendingRestore.name, state: { ...r.state, logo: r.state.logo ?? null, exported_at: pendingRestore.env.exported_at } }; return render(); }
+    if (k === 'chpw') { if (!(await A.verifyPassword(auth, f.old))) throw new Error('Current password is wrong.'); if (f.pw !== f.pw2) throw new Error('The new passwords do not match.'); auth = await A.createAuth(f.pw); await kvSet('auth', auth); bkKey = await A.backupKey(auth, f.pw); sheet = null; render(); return toast('Password changed.'); }
+  } catch (err) { if (locked) { lockMsg = err.message; render(); } else toast(err.message, { alert: true, ms: 6000 }); }
+  finally { if (btn?.isConnected) btn.disabled = false; }
+}, true);
+
 // ---- start ----
 (async () => {
   const saved = await kvGet('state'); if (saved) { const v = L.validateBackup(saved); if (v.ok) S = v.state; else { await kvSet('corrupt-' + Date.now(), saved); toast('Saved data could not be read; a copy was kept. Restore a backup in Settings.', { alert: true, ms: 9000 }); } }
   hasPrev = !!(await kvGet('prev'));
   normSettings(); navigator.storage?.persist?.().catch(() => {});
+  auth = await kvGet('auth'); await setLogo(await kvGet('logo'), false);
   let lastState = ''; AI.onAi((a) => { if (a.state === 'ready' && lastState !== 'ready') setTimeout(warmChat, 50); lastState = a.state; paintEngine(); if (sheet === 'chat') paintChat(); if (tab === 'home' && !sheet) { const p = document.querySelector('.ask .chip'); if (p) p.outerHTML = aiPill(); } });
   const vv = window.visualViewport; if (vv) { const u = () => { document.documentElement.style.setProperty('--vvh', vv.height + 'px'); document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px'); }; vv.addEventListener('resize', u); vv.addEventListener('scroll', u); u(); }
-  banner(); render(true); await save();
-  AI.refresh();
-  checkReminders(); setInterval(checkReminders, 15000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (tab === 'home' && !sheet) render(); } });
+  banner(); render(true);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!locked && hiddenAt && Date.now() - hiddenAt > AUTOLOCK_MS) return lockNow(); if (!locked) { checkReminders(); if (tab === 'home' && !sheet) render(); } });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  window.__anna = { get S() { return S; }, AI, L, VERSION, checkReminders, runDiagnostics }; // used by automated tests
+  window.__anna = { get S() { return S; }, get locked() { return locked; }, AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
 })();

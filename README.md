@@ -1,4 +1,4 @@
-# Anna — v0.4.0
+# Anna — v0.4.1
 
 **Anna** is a private personal assistant that runs entirely in your browser and is designed for **iPhone (Safari, added to the Home Screen)**. It organises your tasks, reminders, money, small business and personal memories, and has a **genuine offline AI** (Qwen2.5 0.5B Instruct) that runs on the phone itself. No accounts, no cloud, no subscriptions: your data and the AI stay on your device.
 
@@ -11,14 +11,16 @@ Live site: **https://tamanitadiwa-coder.github.io/Anna/**
 | **Money** | Income and expenses in rand (R 1 234,56), spending breakdown, 6-month cash flow, monthly budgets per category, bills with due dates, paid status, monthly roll-over and payment history. |
 | **Business** | Sales, expenses and invoices (cash basis profit), unpaid invoices, search across all records. |
 | **Brain** | Personal memories (save, search, filter, edit, delete), AI model management, privacy switches, diagnostics. |
-| **Settings** | Backup export, verified restore with preview and undo, name, currency (rand by default), notifications, offline diagnostics, erase. |
+| **Owner lock** | Anna belongs to **Jamal Tamani**. Password-protected (PBKDF2 hash only, never the password), auto-lock after 5 min, Lock now, change password. |
+| **Your logo** | Settings → Anna logo: upload your own image; shown on the lock screen and every page; replace or reset any time. |
+| **Settings** | Encrypted backup export, verified restore with preview and undo, name, currency (rand by default), notifications, offline diagnostics, erase. |
 
 Every record can be **edited** (tap it) and **deleted** (bin icon, with Undo).
 
 ## Install on iPhone 15 (5 minutes + model download)
 
 1. Open **https://tamanitadiwa-coder.github.io/Anna/** in **Safari**.
-2. Tap **Share → Add to Home Screen → Add**. Close Safari and **always open Anna from the new icon** (the Home Screen app has its own storage, separate from Safari tabs).
+2. Create your password on the welcome screen. Then tap **Share → Add to Home Screen → Add**. Close Safari and **always open Anna from the new icon** (the Home Screen app has its own storage, separate from Safari tabs).
 3. On **Wi-Fi**, open **Brain → Download AI model · 398 MB**. Keep the screen on and Anna open until the pill says **Installed · not loaded** (the file is checked with SHA-256 automatically).
 4. Tap **Load into memory**. Anna runs a real test answer; when it passes the pill says **Ready · works offline**.
 5. Tap **Ask Anna**. Try *“What should I focus on today?”*
@@ -27,7 +29,7 @@ Every record can be **edited** (tap it) and **deleted** (bin icon, with Undo).
 
 After an iPhone restart or closing Anna, the model stays installed; just tap **Load into memory** again (it does not re-download).
 
-**Back up regularly:** Settings → Export backup → save to Files/iCloud. Backups contain all records, reminders, chat history and settings (not the 398 MB model).
+**Back up regularly:** Settings → Export backup → save to Files/iCloud. Backups are encrypted with your password and contain all records, reminders, chat history, settings, logo and owner identity (not the 398 MB model). To move to a new phone see `HANDOVER.md` §12.
 
 ## What to expect from the AI
 
@@ -39,7 +41,7 @@ After an iPhone restart or closing Anna, the model stays installed; just tap **L
 
 ```bash
 npm ci            # installs the AI engine (wllama 3.5.1) — Node 22
-npm test          # 33 unit/build tests
+npm test          # 38 unit/build tests
 npm run build     # writes _site/ (exactly what the browser needs)
 npm run serve     # http://127.0.0.1:8080/Anna/
 npm run e2e       # browser tests (Playwright/Chromium); real-model tests need ANNA_MODEL_FILE or ANNA_REAL_HF=1

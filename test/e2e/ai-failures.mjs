@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync, statSync, createReadStream } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os'; import { join } from 'node:path';
-import { pw, reporter, SAFARI_ENGINE } from './lib.mjs';
+import { pw, reporter, SAFARI_ENGINE, ready, TEST_PW } from './lib.mjs';
 import { serve } from './serve.mjs';
 import { MODEL } from '../../ai.js';
 const FILE = process.env.ANNA_MODEL_FILE || '/home/user/models/qwen.gguf', SIZE = statSync(FILE).size;
@@ -32,7 +32,7 @@ const st = () => page.evaluate(() => ({ state: window.__anna.AI.ai.state, error:
 const waitState = (w, ms = 900000) => page.waitForFunction((w) => w.includes(window.__anna.AI.ai.state), w, { timeout: ms, polling: 300 });
 const stored = () => page.evaluate(async () => { const d = await navigator.storage.getDirectory(); let n = 0, bytes = 0; const walk = async (h) => { for await (const [, e] of h.entries()) { if (e.kind === 'file') { n++; bytes += (await e.getFile()).size; } else await walk(e); } }; await walk(d); return { n, bytes }; });
 try {
-  await page.goto(url); await page.waitForFunction(() => window.__anna); await page.click('[data-tab="brain"]'); await waitState(['absent'], 30000);
+  await page.goto(url); await ready(page); await page.click('[data-tab="brain"]'); await waitState(['absent'], 30000);
   // cancel
   mode = 'slow'; await page.click('[data-act="ai-download"]'); await page.waitForFunction(() => (window.__anna.AI.ai.progress?.loaded || 0) > 2e6, null, { timeout: 120000 });
   await page.click('[data-act="ai-cancel"]'); await waitState(['absent', 'partial'], 60000); let s = await st();
@@ -53,7 +53,7 @@ try {
   mode = 'good'; await page.click('[data-act="ai-download"]'); await waitState(['absent', 'cached', 'partial']); s = await st();
   R.ok(s.state === 'cached' && s.info.verified, 'a clean download afterwards succeeds and verifies', s.error);
   // tampering after install is caught at load time
-  await page.evaluate(() => localStorage.removeItem('anna-web:model-verified')); await page.reload(); await page.waitForFunction(() => window.__anna); await page.click('[data-tab="brain"]'); await waitState(['cached'], 60000);
+  await page.evaluate(() => localStorage.removeItem('anna-web:model-verified')); await page.reload(); await ready(page); await page.click('[data-tab="brain"]'); await waitState(['cached'], 60000);
   await page.click('[data-act="ai-load"]'); await waitState(['ready', 'absent', 'cached'], 600000); s = await st();
   R.ok(s.state === 'ready' && s.info.verified, 'if the verification record is lost, the file is re-hashed before loading', s.error);
   // delete

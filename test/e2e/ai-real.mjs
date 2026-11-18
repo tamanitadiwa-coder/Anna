@@ -5,7 +5,7 @@
 // Usage: node test/e2e/ai-real.mjs [--safari-engine]   env ANNA_MODEL_FILE=/path/to/model.gguf  ANNA_REAL_HF=1
 import { existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os'; import { join } from 'node:path';
-import { pw, reporter, SAFARI_ENGINE } from './lib.mjs';
+import { pw, reporter, SAFARI_ENGINE, ready, TEST_PW } from './lib.mjs';
 import { serve } from './serve.mjs';
 import { MODEL } from '../../ai.js';
 const safari = process.argv.includes('--safari-engine'), realHF = process.env.ANNA_REAL_HF === '1', FILE = process.env.ANNA_MODEL_FILE || '/home/user/models/qwen.gguf';
@@ -41,7 +41,7 @@ async function ask(page, q) {
 const evidence = { model: { ...MODEL }, engine: safari ? 'compat build (Safari path, JSPI hidden)' : 'default build', source: realHF ? 'live huggingface.co' : 'local copy served at the real Hugging Face URL', answers: [] };
 try {
   let { ctx, page } = await open();
-  await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 30000 });
+  await page.goto(url); await ready(page, 30000);
   await page.evaluate(async () => { const r = await navigator.serviceWorker.ready; return !!r.active; });
   await page.click('[data-tab="brain"]'); await waitState(page, ['absent'], 30000);
   R.ok(await page.locator('#pill').innerText() === 'Not installed', 'Brain shows "Not installed" before download');
@@ -89,7 +89,7 @@ try {
   await page.click('[data-act="close"]'); await page.click('[data-act="ai-unload"]'); await waitState(page, ['cached'], 60000); R.ok(true, 'Unload returns to "Installed · not loaded"');
   // 7-9: restart the browser while still offline
   await ctx.close(); ({ ctx, page } = await open()); await ctx.setOffline(true);
-  await page.goto(url).catch((e) => R.note('goto: ' + e.message)); const loaded = await page.waitForFunction(() => window.__anna, null, { timeout: 30000 }).then(() => true, () => false);
+  await page.goto(url).catch((e) => R.note('goto: ' + e.message)); const loaded = await ready(page, 30000).then(() => true, () => false);
   R.ok(loaded, 'after restart with no internet, Anna opens from the offline cache');
   if (loaded) {
     R.ok((await page.evaluate(() => window.__anna.S.chat.length)) === chatLen, 'conversation history survived the restart', chatLen);

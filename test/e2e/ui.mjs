@@ -2,7 +2,7 @@
 // Usage: node test/e2e/ui.mjs [--device "iPhone 15"|desktop]   (Chromium; device emulation is layout only, not a real iPhone)
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os'; import { join } from 'node:path';
-import { pw, reporter } from './lib.mjs';
+import { pw, reporter, ready, TEST_PW } from './lib.mjs';
 import { serve } from './serve.mjs';
 const devName = process.argv.includes('desktop') ? 'desktop' : 'iPhone 15';
 const R = reporter('ui-' + devName.replace(/\s/g, '-').toLowerCase());
@@ -39,6 +39,15 @@ async function layoutOk(name) {
 }
 try {
   await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 20000 });
+  // ---------- owner lock: first run ----------
+  R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0, 'fresh install opens locked: no tabs or data visible');
+  R.ok(/Jamal Tamani/.test(await page.locator('.lockv').innerText()) && await page.locator('form[data-form="setup"]').count() === 1, 'first run greets the owner and asks to create a password');
+  await page.fill('[name="pw"]', 'short'); await page.fill('[name="pw2"]', 'short'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/at least 8/.test(await page.locator('.lockv .warn').innerText()), 'weak password refused');
+  await page.fill('[name="pw"]', 'anna-test-pass-1'); await page.fill('[name="pw2"]', 'different-pass-1'); await page.click('form[data-form="setup"] button'); await page.waitForTimeout(300); R.ok(/do not match/.test(await page.locator('.lockv .warn').innerText()), 'mismatched passwords refused');
+  await ready(page, 20000); R.ok(!(await page.evaluate(() => window.__anna.locked)), 'password created and Anna unlocked');
+  const authRec = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open('anna-web', 1); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').get('auth'); q.onsuccess = () => res(q.result); }; }));
+  R.ok(authRec?.hash && authRec.iter >= 310000 && authRec.owner === 'Jamal Tamani' && !JSON.stringify(authRec).includes(TEST_PW), 'only a PBKDF2 hash is stored (no plaintext password), owner recorded');
+  R.ok(/Jamal/.test(await page.locator('h1').innerText()), 'home greets Jamal by default');
   // ---------- first run ----------
   R.ok(await page.locator('#tabs button').count() === 5, 'five main tabs render');
   R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)');
@@ -146,11 +155,15 @@ try {
   const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache wllama 3\.5\.1 \(4\/4 files\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
   R.ok(/Not fully ready.*Install the AI model/.test(dg), 'diagnostics verdict explains what is missing (no model yet)');
   // backup → erase → restore
-  const before2 = await S(); const d2 = page.waitForEvent('download'); await page.click('[data-act="export"]'); const bk = await d2; const bkPath = await bk.path(), bkText = readFileSync(bkPath, 'utf8'), bkJson = JSON.parse(bkText);
+  const before2 = await S(); const d2 = page.waitForEvent('download'); await page.click('[data-act="export"]'); const bk = await d2; const bkPath = await bk.path(), bkText = readFileSync(bkPath, 'utf8'), env = JSON.parse(bkText);
+  R.ok(env.encrypted === 1 && env.owner === 'Jamal Tamani' && !/Thandi|Tamani\b.*greeting|VAT number|Kept answer/.test(env.ct) && !bkText.includes('VAT number'), 'backup file is encrypted (no readable personal data)');
+  const bkJson = JSON.parse(await page.evaluate(([e, p]) => window.__anna.A.decryptBackup(e, p), [env, TEST_PW]));
   R.ok(bkJson.app === 'anna-web' && bkJson.tasks.length === before2.tasks.length && bkJson.reminders.length === before2.reminders.length && bkJson.chat.length === 2 && bkJson.mem.length === 1 && bkJson.biz.length === 2, 'export backup contains every record type incl. reminders and chat', bk.suggestedFilename());
   dialogs = []; await page.click('[data-act="erase"]'); await page.waitForFunction(() => window.__anna.S.tasks.length === 0, null, { timeout: 5000 }).catch(() => {}); s = await S(); R.ok(dialogs.length === 2 && s.tasks.length === 0 && s.tx.length === 0 && s.chat.length === 0, 'erase all data (two confirmations)', JSON.stringify({ d: dialogs, t: s.tasks.length, x: s.tx.length, c: s.chat.length, tab: await page.locator('h1').innerText() }));
   await page.click('.top [data-tab="data"]'); await page.setInputFiles('#file', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"app":"other"}') }); await page.waitForTimeout(300); R.ok(/not an Anna Web backup/.test(await toastText()), 'invalid backup file is refused', await toastText());
-  await page.setInputFiles('#file', bkPath); await page.waitForSelector('#sheet [data-act="restore-confirm"]', { timeout: 5000 }).catch(() => {}); R.ok(/Restore this backup/.test(await page.locator('#sheet').innerText()) && /Backup/.test(await page.locator('#sheet .status').innerText()), 'restore shows a preview before overwriting');
+  await page.setInputFiles('#file', bkPath); await page.waitForSelector('form[data-form="restorepw"]', { timeout: 5000 });
+  await page.fill('form[data-form="restorepw"] [name="pw"]', 'wrong-password-9'); await page.click('form[data-form="restorepw"] button'); await page.waitForTimeout(800); R.ok(/Wrong password/.test(await toastText()), 'encrypted backup with wrong password is refused');
+  await page.fill('form[data-form="restorepw"] [name="pw"]', TEST_PW); await page.click('form[data-form="restorepw"] button'); await page.waitForSelector('#sheet [data-act="restore-confirm"]', { timeout: 5000 }).catch(() => {}); R.ok(/Restore this backup/.test(await page.locator('#sheet').innerText()) && /Backup/.test(await page.locator('#sheet .status').innerText()), 'restore shows a preview before overwriting');
   await page.click('[data-act="restore-confirm"]'); await page.waitForTimeout(300); R.ok(/Restored and verified/.test(await toastText()), 'restore completes and verifies what was saved', await toastText());
   s = await S(); R.ok(JSON.stringify([s.tasks, s.tx, s.bills, s.budgets, s.biz, s.mem, s.reminders, s.chat]) === JSON.stringify([before2.tasks, before2.tx, before2.bills, before2.budgets, before2.biz, before2.mem, before2.reminders, before2.chat]), 'restored records are identical to the originals');
   R.ok(await page.locator('[data-act="undo-restore"]').count() === 1, 'undo-restore is offered');
@@ -164,13 +177,27 @@ try {
   else R.note('Notification delivery not testable here: headless Chromium always reports permission "denied".');
   await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 }); await page.click('[data-act="diag-copy"]'); await page.waitForTimeout(200);
   R.ok(/Report copied/.test(await toastText()) && /VERDICT/.test(await page.evaluate(() => navigator.clipboard.readText())), 'Copy report puts the diagnostics on the clipboard');
+  // ---------- custom logo ----------
+  await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.setInputFiles('#logofile', new URL('../../icons/icon-512.png', import.meta.url).pathname); await page.waitForTimeout(800);
+  R.ok(await page.locator('.brand img.ulogo').count() === 1 && /^data:image\/png/.test(await page.locator('.brand img.ulogo').getAttribute('src')), 'uploaded logo replaces the brand logo');
+  R.ok(/^data:image\/png/.test(await page.evaluate(() => document.querySelector('link[rel="apple-touch-icon"]').href)), 'uploaded logo is used as the Home Screen icon for new installs');
+  // ---------- lock now / change password ----------
+  await page.click('[data-act="lock"]'); R.ok(await page.evaluate(() => window.__anna.locked) && await page.locator('#tabs button').count() === 0 && await page.locator('.lockv img.biglogo').count() === 1, 'Lock now hides everything and shows the owner logo');
+  await page.fill('form[data-form="unlock"] [name="pw"]', 'wrong-password-1'); await page.click('form[data-form="unlock"] button'); await page.waitForTimeout(800); R.ok(/Wrong password/.test(await page.locator('.lockv').innerText()) && await page.evaluate(() => window.__anna.locked), 'wrong password does not unlock');
+  await ready(page); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'unlock returns to the page you were on'); await page.click('[data-act="open"][data-id="chpw"]');
+  await page.fill('[name="old"]', 'nope-nope-1'); await page.fill('[name="pw"]', 'new-pass-word-2'); await page.fill('[name="pw2"]', 'new-pass-word-2'); await page.click('form[data-form="chpw"] button'); await page.waitForTimeout(800); R.ok(/Current password is wrong/.test(await toastText()), 'change password requires the current password');
+  await page.fill('[name="old"]', TEST_PW); await page.click('form[data-form="chpw"] button'); await page.waitForTimeout(1000); R.ok(/Password changed/.test(await toastText()), 'password changed');
+  await page.click('[data-act="lock"]'); await page.fill('form[data-form="unlock"] [name="pw"]', 'new-pass-word-2'); await page.click('form[data-form="unlock"] button'); await page.waitForFunction(() => !window.__anna.locked, null, { timeout: 10000 }).then(() => R.ok(true, 'new password unlocks'), () => R.ok(false, 'new password unlocks'));
+  await page.click('[data-act="open"][data-id="chpw"]'); await page.fill('[name="old"]', 'new-pass-word-2'); await page.fill('[name="pw"]', TEST_PW); await page.fill('[name="pw2"]', TEST_PW); await page.click('form[data-form="chpw"] button'); await page.waitForTimeout(1000);
   // ---------- persistence across a full browser restart ----------
-  const snap = JSON.stringify(await S()); await ctx.close(); ({ ctx, page } = await open()); await page.goto(url); await page.waitForFunction(() => window.__anna, null, { timeout: 20000 });
+  const snap = JSON.stringify(await S()); await ctx.close(); ({ ctx, page } = await open()); await page.goto(url); await ready(page, 20000);
   const after = await S(); R.ok(JSON.stringify(after) === snap, 'all data identical after closing and reopening the browser (IndexedDB)');
   R.ok(after.settings.name === 'Tamani' && after.settings.currency === 'R', 'settings persist');
+  R.ok(await page.locator('.brand img.ulogo').count() === 1, 'custom logo persists after restart');
+  await page.click('.top [data-tab="data"]'); await page.click('[data-act="logo-reset"]'); await page.waitForSelector('.brand svg', { timeout: 5000 }).catch(() => {}); R.ok(await page.locator('.brand img.ulogo').count() === 0 && await page.locator('.brand svg').count() === 1, 'reset logo returns to the default', JSON.stringify({ img: await page.locator('.brand img.ulogo').count(), svg: await page.locator('.brand svg').count(), h1: await page.locator('h1').innerText() }));
   // ---------- offline app shell ----------
   await page.evaluate(() => navigator.serviceWorker.ready); await ctx.close(); srv.closeAllConnections?.(); await new Promise((r) => srv.close(r));
-  ({ ctx, page } = await open()); await ctx.setOffline(true); await page.goto(url).catch(() => {}); const off = await page.waitForFunction(() => window.__anna, null, { timeout: 20000 }).then(() => true, () => false);
+  ({ ctx, page } = await open()); await ctx.setOffline(true); await page.goto(url).catch(() => {}); const off = await ready(page, 20000).then(() => true, () => false);
   R.ok(off, 'app opens with no internet and no server (service worker cache)');
   if (off) { R.ok((await S()).tasks.length === after.tasks.length, 'data available offline'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 }); R.ok(/Internet: offline/.test(await page.locator('#diagout').innerText()), 'diagnostics detect offline'); for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); } R.ok(true, 'all tabs work offline'); }
   R.ok(errors.length === 0, 'no JavaScript errors during the whole run', errors.join(' | '));

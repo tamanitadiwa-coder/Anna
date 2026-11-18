@@ -2,8 +2,8 @@
 // - App files: precached on install; network first when online (fresh), cache when offline.
 // - AI engine (vendor/, ~22 MB): precached into its own cache named by engine version, so app updates do not re-download it.
 // - The model (~400 MB) lives in OPFS (managed by ai.js), user data in IndexedDB. Neither is ever touched here.
-const VERSION = '0.4.0', APP = 'anna-web-' + VERSION;
-const FILES = ['./', 'index.html', 'app.js', 'logic.js', 'ai.js', 'sha256.js', 'styles.css', 'manifest.webmanifest', 'vendor/manifest.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const VERSION = '0.4.1', APP = 'anna-web-' + VERSION;
+const FILES = ['./', 'index.html', 'app.js', 'logic.js', 'ai.js', 'sha256.js', 'auth.js', 'styles.css', 'manifest.webmanifest', 'vendor/manifest.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 async function cacheEngine() {
   const m = await (await fetch('vendor/manifest.json', { cache: 'no-cache' })).json(), name = 'anna-engine-' + m.engine.version, c = await caches.open(name);
   for (const f of m.engine.files) if (!(await c.match(f))) { const r = await fetch(f, { cache: 'no-cache' }); if (!r.ok) throw new Error(f + ' ' + r.status); await c.put(f, r); }

@@ -1,16 +1,16 @@
 # Anna v0.4.0 — test report
 
-Generated 2026-11-18 18:36 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
+Generated 2026-11-18 19:03 UTC by `node scripts/report.mjs` from `test-results/*.json` (written by the test scripts themselves). Every number below comes from an executed run.
 
 ## Summary
 
 | Suite | Environment | Result | Run |
 |---|---|---|---|
-| Unit + build tests (`npm test`) | Node 22 | **33/33** ✅ | — |
-| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **116/116** ✅ | 2026-11-18 18:20 (48s) |
-| UI, every screen and control | Chromium desktop 1280×860 | **116/116** ✅ | 2026-11-18 18:21 (39s) |
+| Unit + build tests (`npm test`) | Node 22 | **38/38** ✅ | — |
+| UI, every screen and control | Chromium, iPhone 15 emulation (393×852, touch, iOS UA) | **135/135** ✅ | 2026-11-18 18:57 (61s) |
+| UI, every screen and control | Chromium desktop 1280×860 | **135/135** ✅ | 2026-11-18 18:58 (51s) |
 | Genuine model end-to-end (fast engine build) | Chromium; model served at the real HF URL from a verified local copy | **30/30** ✅ | 2026-11-18 18:26 (281s) |
-| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **30/30** ✅ | 2026-11-18 18:30 (270s) |
+| Genuine model end-to-end (Safari engine build) | Chromium with JSPI hidden → wllama compat build used by Safari | **30/30** ✅ | 2026-11-18 19:02 (287s) |
 | Genuine model end-to-end, downloaded from live huggingface.co | Chromium through the internet | **30/30** ✅ | 2026-11-18 18:36 (289s) |
 | Model download failure paths | Chromium, Safari engine build | **11/11** ✅ | 2026-11-18 18:31 (59s) |
 | Live production site (before this release is deployed) | https://tamanitadiwa-coder.github.io/Anna/ | **8/17** ❌ | 2026-11-18 18:09 (3s) |
@@ -59,12 +59,19 @@ Live test (11.4 s, 3.6 tokens/s): Saving money is useful because it helps indivi
 VERDICT: Ready for offline use. You can turn on Airplane Mode.
 ```
 
-## UI, every screen and control — 116/116
+## UI, every screen and control — 135/135
 
 File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch/UA emulation (layout only, not real Safari or hardware)
 
 <details><summary>All checks</summary>
 
+- ✅ fresh install opens locked: no tabs or data visible
+- ✅ first run greets the owner and asks to create a password
+- ✅ weak password refused
+- ✅ mismatched passwords refused
+- ✅ password created and Anna unlocked
+- ✅ only a PBKDF2 hash is stored (no plaintext password), owner recorded
+- ✅ home greets Jamal by default
 - ✅ five main tabs render
 - ✅ ZAR is the default currency (R 0,00)
 - ✅ black theme background
@@ -163,9 +170,11 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ currency can be changed
 - ✅ diagnostics: database, internet and cached AI engine — Internet: connected (Anna does not need it after setup) | Database: indexeddb (best), read/write OK; 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 busines
 - ✅ diagnostics verdict explains what is missing (no model yet)
+- ✅ backup file is encrypted (no readable personal data)
 - ✅ export backup contains every record type incl. reminders and chat — anna-backup-2026-11-18.json
 - ✅ erase all data (two confirmations) — {"d":["Erase ALL Anna data on this device (tasks, reminders, money, business, memories, chat)? Export a backup first.","Really erase everything? (A safety copy 
 - ✅ invalid backup file is refused — This is not an Anna Web backup.
+- ✅ encrypted backup with wrong password is refused
 - ✅ restore shows a preview before overwriting
 - ✅ restore completes and verifies what was saved — Restored and verified: 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 business records, 1 memory, 2 messages.
 - ✅ restored records are identical to the originals
@@ -174,8 +183,18 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 - ✅ undo again returns the restored data
 - ✅ notification status matches the browser permission — denied: Notifications Blocked by the browser (on iPhone: Settings → Notifications → Anna)
 - ✅ Copy report puts the diagnostics on the clipboard
+- ✅ uploaded logo replaces the brand logo
+- ✅ uploaded logo is used as the Home Screen icon for new installs
+- ✅ Lock now hides everything and shows the owner logo
+- ✅ wrong password does not unlock
+- ✅ unlock returns to the page you were on
+- ✅ change password requires the current password
+- ✅ password changed
+- ✅ new password unlocks
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
+- ✅ custom logo persists after restart
+- ✅ reset logo returns to the default — {"img":0,"svg":1,"h1":"Data & settings"}
 - ✅ app opens with no internet and no server (service worker cache)
 - ✅ data available offline
 - ✅ diagnostics detect offline
@@ -184,12 +203,19 @@ File: `test-results/ui-iphone-15.json` · Chromium with iPhone 15 viewport/touch
 
 </details>
 
-## UI, every screen and control — 116/116
+## UI, every screen and control — 135/135
 
 File: `test-results/ui-desktop.json` · Desktop Chromium
 
 <details><summary>All checks</summary>
 
+- ✅ fresh install opens locked: no tabs or data visible
+- ✅ first run greets the owner and asks to create a password
+- ✅ weak password refused
+- ✅ mismatched passwords refused
+- ✅ password created and Anna unlocked
+- ✅ only a PBKDF2 hash is stored (no plaintext password), owner recorded
+- ✅ home greets Jamal by default
 - ✅ five main tabs render
 - ✅ ZAR is the default currency (R 0,00)
 - ✅ black theme background
@@ -288,9 +314,11 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ currency can be changed
 - ✅ diagnostics: database, internet and cached AI engine — Internet: connected (Anna does not need it after setup) | Database: indexeddb (best), read/write OK; 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 busines
 - ✅ diagnostics verdict explains what is missing (no model yet)
+- ✅ backup file is encrypted (no readable personal data)
 - ✅ export backup contains every record type incl. reminders and chat — anna-backup-2026-11-18.json
 - ✅ erase all data (two confirmations) — {"d":["Erase ALL Anna data on this device (tasks, reminders, money, business, memories, chat)? Export a backup first.","Really erase everything? (A safety copy 
 - ✅ invalid backup file is refused — This is not an Anna Web backup.
+- ✅ encrypted backup with wrong password is refused
 - ✅ restore shows a preview before overwriting
 - ✅ restore completes and verifies what was saved — Restored and verified: 2 tasks, 1 reminder, 4 entries, 1 bill, 1 budget, 2 business records, 1 memory, 2 messages.
 - ✅ restored records are identical to the originals
@@ -299,8 +327,18 @@ File: `test-results/ui-desktop.json` · Desktop Chromium
 - ✅ undo again returns the restored data
 - ✅ notification status matches the browser permission — denied: Notifications Blocked by the browser (on iPhone: Settings → Notifications → Anna)
 - ✅ Copy report puts the diagnostics on the clipboard
+- ✅ uploaded logo replaces the brand logo
+- ✅ uploaded logo is used as the Home Screen icon for new installs
+- ✅ Lock now hides everything and shows the owner logo
+- ✅ wrong password does not unlock
+- ✅ unlock returns to the page you were on
+- ✅ change password requires the current password
+- ✅ password changed
+- ✅ new password unlocks
 - ✅ all data identical after closing and reopening the browser (IndexedDB)
 - ✅ settings persist
+- ✅ custom logo persists after restart
+- ✅ reset logo returns to the default — {"img":0,"svg":1,"h1":"Data & settings"}
 - ✅ app opens with no internet and no server (service worker cache)
 - ✅ data available offline
 - ✅ diagnostics detect offline
@@ -364,17 +402,17 @@ File: `test-results/ai-real-safari-engine.json`
 - ✅ model loaded and marked ready
 - ✅ loaded architecture is qwen2 — qwen2
 - ✅ readiness self-test produced real text — Hello! How can I assist you today?
-- ✅ system prompt + data pre-read in the background after loading — 233 tokens in 41228 ms
+- ✅ system prompt + data pre-read in the background after loading — 246 tokens in 43360 ms
 - ✅ UI shows "Self-test passed"
 - ✅ suggested questions are offered in an empty chat
-- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 43.0s: An emergency fund is a savings account or money market that is specifically designed to cover unexpected expenses, such as medical bills or job loss.
+- ✅ ONLINE answer to "In one sentence, what is an emergency fund?" — 42.5s: An emergency fund is a savings account or money market that is set aside for unexpected expenses, such as medical bills or car repairs.
 - ✅ answer is rendered in the chat bubble
-- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.0s: You spent R 450,00 on groceries.
+- ✅ ONLINE answer to "How much did I spend on groceries this month?" — 9.5s: You spent R 450,00 on groceries this month.
 - ✅ answer is rendered in the chat bubble
 - ✅ browser reports offline (app server stopped, Hugging Face blocked)
 - ✅ OFFLINE answer to "When is my sister Lindiwe’s birthday?" — 9.0s: Your sister Lindiwe's birthday is on 3 March
-- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 12.5s: 1. Track your spending and set financial goals. 2. Prioritize your expenses and avoid impulse
-- ✅ Stop ends a long answer early and keeps the partial text — 20 chars
+- ✅ OFFLINE answer to "Give me two quick tips to stick to a monthly budget." — 16.5s: 1. Prioritize essential expenses and cut back on non-essential spending. 2. Use a budgeting app to track your spending and ensure you stay on
+- ✅ Stop ends a long answer early and keeps the partial text — 21 chars
 - ✅ Send is available again after stopping
 - ✅ offline answer used saved memory (birthday = 3 March) — Your sister Lindiwe's birthday is on 3 March
 - ✅ Unload returns to "Installed · not loaded"
@@ -382,7 +420,7 @@ File: `test-results/ai-real-safari-engine.json`
 - ✅ conversation history survived the restart — 10
 - ✅ model still installed and verified after restart — cached
 - ✅ model loads again with no internet
-- ✅ OFFLINE answer after restart — 83.0s: 15% of R2000 is R300.
+- ✅ OFFLINE answer after restart — 87.5s: 15% of R2000 is R300.
 - ✅ offline diagnostics verdict: ready — VERDICT: Ready for offline use. You can turn on Airplane Mode.
 
 </details>

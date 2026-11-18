@@ -14,7 +14,7 @@ if (existsSync('test-results')) { const t = `${D}/.tmp`; rmSync(t, { recursive: 
 run('bash', ['-c', `cd _site && zip -qr ../${prod} . -x '.DS_Store'`]);
 run('git', ['bundle', 'create', bundle, '--all']);
 const list = (z) => run('unzip', ['-Z1', z]).split('\n').filter(Boolean);
-const need = { [dev]: ['anna/index.html', 'anna/app.js', 'anna/ai.js', 'anna/sha256.js', 'anna/vendor/wllama/wllama.wasm', 'anna/vendor/wllama-compat/wllama.wasm', 'anna/HANDOVER.md', 'anna/docs/TEST-REPORT.md', 'anna/package-lock.json', 'anna/.github/workflows/ci.yml', 'anna/test/e2e/ai-real.mjs'], [prod]: ['index.html', 'app.js', 'sw.js', 'sha256.js', '.nojekyll', 'icons/icon-512.png', 'vendor/manifest.json', 'vendor/wllama/index.js', 'vendor/wllama-compat/wllama.js'] };
+const need = { [dev]: ['anna/index.html', 'anna/app.js', 'anna/ai.js', 'anna/sha256.js', 'anna/auth.js', 'anna/vendor/wllama/wllama.wasm', 'anna/vendor/wllama-compat/wllama.wasm', 'anna/HANDOVER.md', 'anna/docs/TEST-REPORT.md', 'anna/package-lock.json', 'anna/.github/workflows/ci.yml', 'anna/test/e2e/ai-real.mjs'], [prod]: ['index.html', 'app.js', 'sw.js', 'sha256.js', 'auth.js', '.nojekyll', 'icons/icon-512.png', 'vendor/manifest.json', 'vendor/wllama/index.js', 'vendor/wllama-compat/wllama.js'] };
 const report = [];
 for (const [z, files] of Object.entries(need)) { run('unzip', ['-tq', z]); const l = list(z), miss = files.filter((f) => !l.includes(f)); if (miss.length) throw new Error(`${z} is missing ${miss.join(', ')}`); report.push(`${z}: OK, ${l.length} entries, ${(statSync(z).size / 1e6).toFixed(1)} MB, integrity test passed`); }
 run('git', ['bundle', 'verify', bundle]); report.push(`${bundle}: OK (git bundle verify), ${(statSync(bundle).size / 1e6).toFixed(1)} MB`);

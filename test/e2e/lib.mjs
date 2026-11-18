@@ -18,3 +18,14 @@ export function reporter(name) {
 }
 // Hide JSPI so wllama takes its Safari (compat) path even in Chromium.
 export const SAFARI_ENGINE = () => { try { delete WebAssembly.Suspending; delete WebAssembly.promising; } catch {} };
+// Waits for Anna to start, then passes the owner lock: creates the test password on a fresh profile, otherwise unlocks.
+export const TEST_PW = 'anna-test-pass-1';
+export async function ready(page, timeout = 30000) {
+  await page.waitForFunction(() => window.__anna, null, { timeout });
+  if (await page.evaluate(() => window.__anna.locked)) {
+    if (await page.locator('form[data-form="setup"]').count()) { await page.fill('form[data-form="setup"] [name="pw"]', TEST_PW); await page.fill('form[data-form="setup"] [name="pw2"]', TEST_PW); await page.click('form[data-form="setup"] button'); }
+    else { await page.fill('form[data-form="unlock"] [name="pw"]', TEST_PW); await page.click('form[data-form="unlock"] button'); }
+    await page.waitForFunction(() => !window.__anna.locked, null, { timeout: 30000 });
+  }
+  return true;
+}

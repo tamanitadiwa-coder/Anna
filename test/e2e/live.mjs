@@ -3,7 +3,7 @@
 //   ANNA_LIVE=https://tamanitadiwa-coder.github.io/Anna/ node test/e2e/live.mjs
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { pw, reporter } from './lib.mjs';
+import { pw, reporter, ready, TEST_PW } from './lib.mjs';
 const BASE = (process.env.ANNA_LIVE || 'https://tamanitadiwa-coder.github.io/Anna/').replace(/\/?$/, '/');
 const R = reporter('live-site'), want = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url))).version;
 const man = JSON.parse(readFileSync(new URL('../../vendor/manifest.json', import.meta.url)));
@@ -17,13 +17,13 @@ R.ok((await get('does-not-exist')).status === 404 && /Opening Anna/.test((await 
 if (live === want) {
   const b = await pw.chromium.launch(), ctx = await b.newContext({ ...(({ defaultBrowserType, ...d }) => d)(pw.devices['iPhone 15']), ...(process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY }, ignoreHTTPSErrors: true } : {}) });
   const page = await ctx.newPage(), errs = []; page.on('pageerror', (e) => errs.push(e.message));
-  await page.goto(BASE); const ok = await page.waitForFunction(() => window.__anna, null, { timeout: 30000 }).then(() => true, () => false); R.ok(ok, 'live app starts in iPhone 15 emulation');
+  await page.goto(BASE); const ok = await ready(page, 30000).then(() => true, () => false); R.ok(ok, 'live app starts in iPhone 15 emulation');
   if (ok) {
     for (const t of ['tasks', 'money', 'biz', 'brain', 'home']) await page.click(`#tabs [data-tab="${t}"]`);
     R.ok(true, 'all tabs open on the live site');
     await page.evaluate(() => navigator.serviceWorker.ready); await page.waitForFunction(async () => { const k = (await caches.keys()).find((x) => x.startsWith('anna-engine-')); return k && (await (await caches.open(k)).keys()).length === 4; }, null, { timeout: 120000, polling: 1000 }).then(() => R.ok(true, 'service worker cached the 4 AI engine files'), () => R.ok(false, 'service worker cached the 4 AI engine files'));
-    await page.reload(); await page.waitForFunction(() => window.__anna); await ctx.setOffline(true); await page.reload().catch(() => {});
-    R.ok(await page.waitForFunction(() => window.__anna, null, { timeout: 20000 }).then(() => true, () => false), 'live app reloads with the internet off');
+    await page.reload(); await ready(page); await ctx.setOffline(true); await page.reload().catch(() => {});
+    R.ok(await ready(page, 20000).then(() => true, () => false), 'live app reloads with the internet off');
     const d = await page.evaluate(() => window.__anna.runDiagnostics()); R.ok(/AI engine cache wllama/.test(d), 'diagnostics on the live site', d.split('\n').find((l) => l.startsWith('Offline app files')));
   }
   R.ok(!errs.length, 'no JavaScript errors on the live site', errs.join(' | ')); await b.close();
