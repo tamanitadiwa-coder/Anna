@@ -1,0 +1,11 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const r = (f) => readFileSync(f, 'utf8');
+test('versions agree across package.json, app.js and sw.js', () => { const v = JSON.parse(r('package.json')).version; assert.match(r('app.js'), new RegExp(`VERSION = '${v}'`)); assert.match(r('sw.js'), new RegExp(`VERSION = '${v}'`)); });
+test('vendored AI engine matches node_modules (if installed) and the manifest', () => { const m = JSON.parse(r('vendor/manifest.json')); assert.equal(m.engine.ok, true); assert.equal(m.engine.files.length, 4); for (const f of m.engine.files) assert.ok(existsSync(f), f);
+  if (existsSync('node_modules/@wllama/wllama')) execFileSync(process.execPath, ['scripts/vendor.mjs', '--check']); });
+test('service worker precaches every app module that index/app import', () => { const sw = r('sw.js'); for (const f of ['app.js', 'ai.js', 'logic.js', 'sha256.js', 'styles.css', 'index.html', 'manifest.webmanifest', 'vendor/manifest.json']) assert.ok(sw.includes(`'${f}'`), f);
+  const imports = [...r('app.js').matchAll(/from '\.\/([^']+)'/g), ...r('ai.js').matchAll(/from '\.\/([^']+)'/g)].map((x) => x[1]); for (const f of imports) assert.ok(sw.includes(`'${f}'`), 'sw caches ' + f); });
+test('all asset paths are relative (works under /Anna/ on GitHub Pages)', () => { for (const f of ['index.html', 'manifest.webmanifest']) assert.doesNotMatch(r(f), /(href|src)="\/|"start_url":"\//, f); assert.doesNotMatch(r('sw.js').match(/FILES = \[[^\]]+\]/)[0], /'\//); });
+test('build produces a complete _site', () => { execFileSync(process.execPath, ['scripts/build.mjs']); for (const f of ['index.html', 'app.js', 'sha256.js', '.nojekyll', 'icons/icon-192.png', 'vendor/wllama/index.js', 'vendor/wllama-compat/wllama.wasm']) assert.ok(existsSync('_site/' + f), f); });

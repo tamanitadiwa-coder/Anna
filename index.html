@@ -1,14 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-ZA">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Anna</title>
-<meta name="theme-color" content="#FBF7EE">
+<meta name="description" content="Anna: a private personal assistant with offline AI. Your data stays on this device.">
+<meta name="theme-color" content="#0A0A0B">
+<meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Anna">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
@@ -16,9 +19,11 @@
 </head>
 <body>
 <div id="banner" hidden></div>
-<main id="screen" aria-live="polite"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<main id="screen" aria-live="polite"><div class="boot">Anna</div></main>
 <nav id="tabs" aria-label="Main"></nav>
 <div id="sheet"></div>
+<noscript><p style="padding:24px;color:#ccc">Anna needs JavaScript turned on.</p></noscript>
 <script type="module" src="app.js"></script>
 </body>
 </html>
