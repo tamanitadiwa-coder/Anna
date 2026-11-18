@@ -55,10 +55,10 @@ try {
   R.ok(/Jamal/.test(await page.locator('h1').innerText()), 'home greets Jamal by default');
   // ---------- first run ----------
   R.ok(await page.locator('#tabs button').count() === 5, 'five main tabs render');
-  await page.waitForFunction(() => /not installed/.test(document.querySelector('#pstatus')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
-  R.ok(await page.locator('.presence .orb[data-s="off"]').count() === 1 && /not installed/.test(await page.locator('#pstatus').innerText()), 'Home: central orb resting, honest status (brain not installed)');
+  await page.waitForFunction(() => /not available|not installed/.test(document.querySelector('#pstatus')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  R.ok(await page.locator('.presence .orb[data-s="off"]').count() === 1 && /not available|not installed/.test(await page.locator('#pstatus').innerText()), 'Home: central orb resting, honest status (no WebGPU here: AI brain not available)');
   R.ok(await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(0, 0, 0)', 'pure black background');
-  await page.click('#awake'); await page.waitForTimeout(300); R.ok(/Brain/.test(await page.locator('h1').innerText()) && /Install/.test(await page.locator('#toast').innerText()), 'awake toggle without a model leads to Brain to install it'); await tabTo('home');
+  await page.click('#awake'); await page.waitForTimeout(300); R.ok(/not available|Download/.test(await page.locator('#toast').innerText()), 'awake toggle explains why the AI cannot start here', await page.locator('#toast').innerText()); await tabTo('home');
   await tabTo('money'); R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)'); await tabTo('home');
     for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
   await page.click('.top [data-tab="data"]'); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'Settings opens from the gear button'); await layoutOk('settings');
@@ -147,7 +147,7 @@ try {
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="fb-down"]'); s = await S(); R.ok(s.mem.find((m) => /amoxicillin/.test(m.content)).incorrect_count === 1, '"Not right" feedback recorded');
   await page.click('#memlist .card:has-text("amoxicillin") [data-act="del"]'); s = await S(); R.ok(s.mem.length === 1, 'delete memory');
   const sw = page.locator('.swrow:has-text("Money") .sw'); const before = await sw.getAttribute('aria-checked'); await sw.click(); R.ok((await sw.getAttribute('aria-checked')) !== before, 'privacy switch toggles'); await page.locator('.swrow:has-text("Money") .sw').click();
-  await page.click('details summary'); await layoutOk('brain with Advanced open'); const gpu = page.locator('.swrow:has-text("GPU") .sw'); await gpu.click(); R.ok(await gpu.getAttribute('aria-checked') === 'true', 'GPU switch toggles and is not covered by its label');
+  await page.click('details summary'); await layoutOk('brain with Advanced open');
   await page.click('[data-act="ctx-open"]'); const ctxText = await page.locator('#sheet pre').innerText(); R.ok(/Groceries/.test(ctxText) && /VAT number/.test(ctxText) && !/Mokoena/.test(ctxText) && !/Checkers/.test(ctxText), '"What Anna sees" shows data but never notes or customer names'); await page.click('#sheet [data-act="close"] >> nth=-1');
   // chat without a model
   await tabTo('home'); await page.click('.ask'); R.ok(/can’t answer yet/.test(await page.locator('#chatmain').innerText()), 'chat explains the AI is not installed'); R.ok(await page.locator('#send').isDisabled(), 'Send is disabled until the AI is ready');
@@ -160,7 +160,7 @@ try {
   await page.click('.top [data-tab="data"]'); await page.fill('#nm', 'Tamani'); await page.click('[data-act="prefs"]'); await tabTo('home'); R.ok(/Tamani/.test(await page.locator('h1').innerText()), 'name preference shows in greeting');
   await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', '$'); await page.click('[data-act="prefs"]'); await tabTo('money'); R.ok(/^\$/.test(await page.locator('.hero .big').innerText()), 'currency can be changed'); await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', 'R'); await page.click('[data-act="prefs"]');
   await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 });
-  const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache wllama 3\.5\.1 \(4\/4 files\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
+  const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache WebLLM 0\.2\.87 \(1 file\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
   R.ok(/Not fully ready.*Install the AI model/.test(dg), 'diagnostics verdict explains what is missing (no model yet)');
   // backup → erase → restore
   const before2 = await S(); const d2 = page.waitForEvent('download'); await page.click('[data-act="export"]'); const bk = await d2; const bkPath = await bk.path(), bkText = readFileSync(bkPath, 'utf8'), env = JSON.parse(bkText);

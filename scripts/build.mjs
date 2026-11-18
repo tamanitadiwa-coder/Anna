@@ -12,4 +12,4 @@ if (new Set(Object.values(vs)).size !== 1) { console.error('Version mismatch:', 
 rmSync('_site', { recursive: true, force: true }); mkdirSync('_site', { recursive: true });
 for (const f of [...APP, 'icons', 'fonts', 'vendor']) cpSync(f, `_site/${f}`, { recursive: true });
 const size = man.engine.files.reduce((n, f) => n + statSync(f).size, 0);
-console.log(`Built _site/ for Anna Web ${pkg.version}. AI engine: wllama ${man.engine.version}, ${man.engine.files.length} files ready (${(size / 1e6).toFixed(1)} MB).`);
+console.log(`Built _site/ for Anna Web ${pkg.version}. AI engine: ${man.engine.name || 'engine'} ${man.engine.version}, ${man.engine.files.length} files ready (${(size / 1e6).toFixed(1)} MB).`);

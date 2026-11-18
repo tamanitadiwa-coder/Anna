@@ -3,7 +3,7 @@
 import * as L from './logic.js';
 import * as AI from './ai.js';
 import * as A from './auth.js';
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -102,7 +102,7 @@ function presenceText() { const a = AI.ai, st = orbState(), secs = a.loadStart ?
   if (a.state === 'ready') return { think: '<b>Thinking…</b>', speak: '<b>Responding…</b>', listen: '<b>Listening</b>', rest: '<b>Awake</b> · resting · works offline' }[st];
   if (a.state === 'cached') return 'Resting · switch on to wake ANNA';
   if (a.state === 'absent' || a.state === 'partial') return 'Offline brain not installed yet';
-  if (a.state === 'unsupported') return 'This browser cannot run ANNA’s brain'; return 'Resting'; }
+  if (a.state === 'unsupported') return 'AI brain not available on this device'; return 'Resting'; }
 function paintOrbs() { const st = orbState(); document.querySelectorAll('.orb[data-live]').forEach((o) => { if (o.dataset.s !== st) o.dataset.s = st; }); const p = $('#pstatus'); if (p) p.innerHTML = presenceText(); const w = $('#awake'); if (w) { const on = ['ready', 'loading'].includes(AI.ai.state); w.classList.toggle('on', on); w.setAttribute('aria-checked', on); } }
 let tick = 0; const ensureTicker = () => { const need = AI.ai.state === 'loading'; if (need && !tick) tick = setInterval(() => { paintOrbs(); if (tab === 'brain') { paintEngine(); const e = $('#loadsecs'); if (e) e.textContent = Math.round((Date.now() - AI.ai.loadStart) / 1000) + 's'; } }, 1000); if (!need && tick) { clearInterval(tick); tick = 0; } };
 const aiPill = () => { const a = AI.ai; return a.state === 'ready' ? '<span class="chip good">AI ready · offline</span>' : a.state === 'cached' ? '<span class="chip gold">AI installed · tap to load</span>' : ['downloading', 'verifying', 'loading'].includes(a.state) ? '<span class="chip gold">AI preparing…</span>' : '<span class="chip">AI not installed</span>'; };
@@ -196,6 +196,7 @@ const screens = {
         <button class="btn soft sm" data-act="prefs">Save preferences</button></div>
       <div class="card"><h2>Reminder alerts</h2><div class="mute" style="margin:4px 0 10px">${remHelp()}</div><div class="status"><b>Notifications</b><span class="${perm === 'granted' ? 'y' : perm === 'denied' ? 'n' : 'm'}">${{ granted: 'Allowed', denied: 'Blocked by the browser (on iPhone: Settings → Notifications → Anna)', default: 'Not yet allowed', unsupported: navigator.standalone === false ? 'Open Anna from the Home Screen icon to enable' : 'Not supported in this browser' }[perm]}</span></div>
         ${perm === 'default' ? '<button class="btn sm" style="margin-top:10px" data-act="notif">Allow notifications</button>' : ''}${perm === 'granted' ? '<button class="btn sage sm" style="margin-top:10px" data-act="notif-test">Send a test alert</button>' : ''}</div>
+      <div class="card"><h2>AI engine</h2><div class="status"><b>Engine</b><span>WebLLM (WebGPU)</span><b>Model</b><span>${esc(AI.ai.info.modelId || AI.MODEL.name)}</span><b>Status</b><span>${esc({ ready: 'Loaded · works offline', cached: 'On this device · not loaded', absent: 'Not downloaded yet', downloading: 'Downloading…', loading: 'Loading…', unsupported: 'AI brain not available on this device (no WebGPU)' }[AI.ai.state] || AI.ai.state)}</span></div></div>
       <div class="card"><h2>Offline diagnostics</h2><div class="mute" style="margin:4px 0 10px">Checks internet, installed app files, the AI engine and model, storage and the database. Works with no internet.</div><div class="row wrap"><button class="btn sm" data-act="diag">Run diagnostics</button>${diag ? '<button class="btn sage sm" data-act="diag-copy">Copy report</button>' : ''}</div>${diag ? `<pre class="diag" id="diagout">${esc(diag)}</pre>` : ''}</div>
       <div class="card"><h2>Storage</h2><div class="mute" id="stor">Using ${mode}. Checking persistence…</div></div>
       <div class="card"><h2>On your iPhone</h2><div class="mute">Safari → Share → <b>Add to Home Screen</b>, then always open Anna from that icon. The Home Screen app keeps its own storage, separate from Safari tabs: install the AI model and keep your data inside the one you use. Use a backup to move data between them.</div></div>
@@ -214,11 +215,14 @@ function memList() {
 // ---- Anna's mind: local AI engine card, permissions, chat ----
 const mb = (b) => Math.round((b || 0) / 1e6) + ' MB';
 const sw = (k, label, hint) => `<div class="swrow"><div class="grow"><b>${label}</b>${hint ? `<div class="mute">${hint}</div>` : ''}</div><button class="sw ${S.settings.ai[k] ? 'on' : ''}" data-act="acc" data-id="${k}" role="switch" aria-checked="${!!S.settings.ai[k]}" aria-label="${label}"><i></i></button></div>`;
+let oldInfo = null, oldChecked = false;
+const checkOld = async () => { if (oldChecked) return; oldChecked = true; oldInfo = await AI.oldModel(); if (oldInfo) { engKey = ''; paintEngine(); } };
 function engineHTML() {
+  checkOld();
   const a = AI.ai, st = a.state, M = AI.MODEL, p = a.progress, pct = p ? Math.min(100, Math.floor((p.loaded / (p.total || M.bytes)) * 100)) : 0;
   const pill = { unknown: ['Checking…', ''], unsupported: ['Not supported', 'bad'], absent: ['Not installed', ''], partial: ['Incomplete download', 'bad'], downloading: [`Downloading ${pct}%`, 'gold'], verifying: [`Verifying ${pct}%`, 'gold'], cached: ['Installed · not loaded', 'gold'], loading: ['Loading…', 'gold'], ready: ['Ready · works offline', 'good'] }[st] || ['Unknown', ''];
   const b = (act, t, c = '') => `<button class="btn ${c}" data-act="${act}">${t}</button>`;
-  const row = { absent: b('ai-download', `Download AI model · ${mb(M.bytes)}`), partial: b('ai-download', 'Download again') + b('ai-delete', 'Delete', 'bad'), downloading: b('ai-cancel', 'Cancel download', 'sage'), verifying: '<button class="btn" disabled>Checking the file…</button>', cached: b('ai-load', 'Load into memory') + b('ai-delete', 'Delete model', 'bad'), loading: b('ai-cancel-load', 'Cancel', 'sage'), ready: b('chat-open', 'Ask Anna') + b('ai-unload', 'Unload', 'sage') + b('ai-delete', 'Delete model', 'bad') }[st] || '';
+  const row = { absent: b('ai-download', a.error ? 'Retry download' : `Download AI brain · ${mb(M.bytes)}`), partial: b('ai-download', 'Download again') + b('ai-delete', 'Delete', 'bad'), downloading: b('ai-cancel', 'Cancel download', 'sage'), verifying: '<button class="btn" disabled>Checking the file…</button>', cached: b('ai-load', a.error ? 'Retry' : 'Load into memory') + b('ai-delete', 'Delete model', 'bad'), loading: b('ai-cancel-load', 'Cancel', 'sage'), ready: b('chat-open', 'Ask Anna') + b('ai-unload', 'Unload', 'sage') + b('ai-delete', 'Delete model', 'bad') }[st] || '';
   const stg = a.storage ? `Browser storage: ${mb(a.storage.usage)} used of ${mb(a.storage.quota)} · ${a.storage.persisted ? 'persistent' : 'not marked persistent'}` : '';
   const prog = st === 'downloading' || st === 'verifying';
   return `<div class="card mind"><div class="row"><h2 class="grow">Anna’s offline AI</h2><span class="chip ${pill[1]}" id="pill">${pill[0]}</span></div>
@@ -229,10 +233,10 @@ function engineHTML() {
     ${a.error ? `<div class="warn">${esc(a.error)}</div>` : ''}
     ${st === 'ready' && a.info.selfTest ? `<div class="ok">Self-test passed: the model answered “${esc(a.info.selfTest.reply.slice(0, 60))}”.</div>` : ''}
     <div class="btnrow">${row}</div>
-    <div class="mute" style="margin-top:10px">${a.info.bytes ? `On this device: ${mb(a.info.bytes)}${a.info.verified ? ', SHA-256 verified' : ''}. ` : ''}${a.info.loadMs ? `Loaded in ${(a.info.loadMs / 1000).toFixed(1)} s. ` : ''}${a.info.tps ? `Last speed: ${a.info.tps} tokens/s. ` : ''}${stg}</div>
+    ${oldInfo ? `<div class="note">The previous AI model (wllama, ${mb(oldInfo.bytes)}) is still stored on this device and is no longer used.<div class="row wrap" style="margin-top:8px"><button class="btn sm bad" data-act="old-delete">Delete old model</button><button class="btn sm sage" data-act="old-keep">Keep for now</button></div></div>` : ''}
+    <div class="mute" style="margin-top:10px">${a.info.bytes ? `On this device: ${mb(a.info.bytes)}. ` : ''}${a.info.loadMs ? `Loaded in ${(a.info.loadMs / 1000).toFixed(1)} s. ` : ''}${a.info.tps ? `Last speed: ${a.info.tps} tokens/s. ` : ''}${stg}</div>
     <details style="margin-top:8px"><summary class="mute" style="min-height:44px;display:flex;align-items:center;cursor:pointer">Advanced &amp; limitations</summary>
-      <div class="mute" style="margin:4px 0 6px">A small model runs on the phone’s CPU, so answers take a few seconds and can be wrong: always check numbers on the Money screen. The model file is not part of backups. Checksum: <code style="overflow-wrap:anywhere">${M.sha256}</code></div>
-      ${sw('gpu', 'Use GPU (experimental)', 'Faster on some devices but may crash on iPhone. Leave off unless testing. Takes effect next time you load.')}
+      <div class="mute" style="margin:4px 0 6px">Engine: WebLLM on the phone’s GPU (WebGPU). Model ${esc(a.info.modelId || M.name)}. It is downloaded once and kept on this device, so it also loads in Airplane Mode. A small model can be wrong: always check numbers on the Money screen. The model is not part of backups.</div>
     </details>
     <div class="row wrap" style="margin-top:6px"><button class="btn sage sm" data-act="diag">Run diagnostics</button>${diag ? '<button class="btn sage sm" data-act="diag-copy">Copy report</button>' : ''}</div>${diag && tab === 'brain' ? `<pre class="diag">${esc(diag)}</pre>` : ''}</div>`;
 }
@@ -340,8 +344,8 @@ async function runDiagnostics() {
   try {
     const reg = await navigator.serviceWorker?.getRegistration(), keys = await caches.keys(), app = keys.find((k) => k === 'anna-web-' + VERSION), eng = keys.find((k) => k.startsWith('anna-engine-'));
     const appN = app ? (await (await caches.open(app)).keys()).length : 0, engN = eng ? (await (await caches.open(eng)).keys()).length : 0;
-    out.push(`Offline app files: service worker ${reg?.active ? 'active' : 'NOT active'}${navigator.serviceWorker?.controller ? ', controlling this page' : ', not yet controlling this page (reopen Anna)'}; app cache ${app ? appN + ' files' : 'MISSING'}; AI engine cache ${eng ? `${eng.replace('anna-engine-', 'wllama ')} (${engN}/4 files)` : 'MISSING'}`);
-    if (!eng || engN < 4) navigator.serviceWorker?.controller?.postMessage('cache-engine');
+    out.push(`Offline app files: service worker ${reg?.active ? 'active' : 'NOT active'}${navigator.serviceWorker?.controller ? ', controlling this page' : ', not yet controlling this page (reopen Anna)'}; app cache ${app ? appN + ' files' : 'MISSING'}; AI engine cache ${eng ? `${eng.replace('anna-engine-', 'WebLLM ')} (${engN} file${engN === 1 ? "" : "s"})` : 'MISSING'}`);
+    if (!eng || engN < 1) navigator.serviceWorker?.controller?.postMessage('cache-engine');
   } catch (e) { out.push('Cache check failed: ' + e.message); }
   out.push(`Notifications: ${typeof Notification === 'undefined' ? 'not available here' : Notification.permission}; pending reminders: ${L.pendingReminders(S).length}`);
   out.push(...(await AI.aiDiagnostics()));
@@ -376,8 +380,10 @@ const actions = {
   'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); scrollTo(0, 0); },
   'ai-download': () => { if (!navigator.onLine) return toast('You are offline. Connect to Wi-Fi to download the model.'); AI.download(); },
   'ai-cancel': () => AI.cancelDownload(), 'ai-cancel-load': () => AI.cancelLoad(),
-  awake: () => { const st = AI.ai.state; if (st === 'ready') return AI.unload(); if (st === 'loading') return AI.cancelLoad(); if (st === 'cached') return AI.load({ gpu: S.settings.ai.gpu }); if (['absent', 'partial'].includes(st)) { tab = 'brain'; render(true); return toast('Install ANNA’s offline brain first (one-time download on Wi-Fi).', { ms: 5000 }); } toast('Please wait a moment…'); },
+  awake: () => { const st = AI.ai.state; if (st === 'ready') return AI.unload(); if (st === 'loading') return AI.cancelLoad(); if (st === 'cached') return AI.load({ gpu: S.settings.ai.gpu }); if (st === 'absent') { tab = 'brain'; render(true); return toast('Download ANNA’s brain first (one-time, Wi-Fi recommended).', { ms: 5000 }); } if (st === 'unsupported') return toast(AI.ai.error || 'AI brain not available on this device.', { ms: 6000 }); toast('Please wait a moment…'); },
   meet: () => { welcomed = true; render(true); }, 'ai-load': () => AI.load({ gpu: S.settings.ai.gpu }), 'ai-unload': () => AI.unload(), 'ai-ack': () => AI.ackCrash(),
+  'old-delete': async () => { if (!oldInfo || !confirm(`Delete the old AI model file (${mb(oldInfo.bytes)})? ANNA now uses WebLLM, so it is no longer needed. This cannot be undone.`)) return; try { await AI.deleteOldModel(); oldInfo = null; engKey = ''; paintEngine(); toast('Old model deleted.'); } catch (e) { toast('Could not delete: ' + e.message); } },
+  'old-keep': () => { oldInfo = null; engKey = ''; paintEngine(); },
   'ai-delete': () => { if (confirm(`Delete the AI model (${mb(AI.MODEL.bytes)}) from this device? You will need internet to download it again. Your data is not affected.`)) AI.remove(); },
   diag: async () => { diag = 'Running diagnostics…'; tab === 'data' ? render() : paintEngine(); diag = await runDiagnostics(); tab === 'data' ? render() : paintEngine(); },
   'diag-copy': async () => { try { await navigator.clipboard.writeText(diag); toast('Report copied.'); } catch { prompt('Copy this report:', diag); } },
