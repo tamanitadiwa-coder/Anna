@@ -3,7 +3,8 @@
 import * as L from './logic.js';
 import * as AI from './ai.js';
 import * as A from './auth.js';
-export const VERSION = '0.6.0';
+import * as LF from './life.js';
+export const VERSION = '0.7.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -23,8 +24,9 @@ async function kvSet(k, v) {
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
 let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
+let LIFE = LF.emptyLife(), brainView = 'journal', jQ = '', jTag = '', pendingRemember = null, checkinShown = false;
 let S = L.emptyState(), tab = 'home', sheet = null, editId = null, taskView = 'today', memCat = 'All', memQ = '', bizQ = '', saveErr = '', SOD = 0, EOD = 0, diag = '', pendingRestore = null, hasPrev = false, undo = null;
-const save = async () => { try { S.chat = S.chat.slice(-300); await kvSet('state', S); saveErr = ''; } catch (e) { saveErr = String(e); } };
+const save = async () => { try { S.chat = S.chat.slice(-300); await kvSet('state', { ...S, mem: [] }); await syncMem(); saveErr = ''; } catch (e) { saveErr = String(e); } };
 const mutate = async (fn, { close = true } = {}) => { fn(); if (close) { sheet = null; editId = null; } render(); await save(); if (saveErr) render(); };
 const cur = () => S.settings.currency || L.DEFAULT_CURRENCY;
 const money = (c) => esc(L.fmt(c, cur()));
@@ -116,7 +118,7 @@ const screens = {
     return top() + `<section class="presence">${orb('', true)}<div class="aname">ANNA</div><h1>Hey, ${esc(ownerFirst())}.</h1>
       <div class="pstatus" id="pstatus">${presenceText()}</div>
       <div class="awake"><span>ANNA is awake</span><button class="sw ${on ? 'on' : ''}" id="awake" data-act="awake" role="switch" aria-checked="${on}" aria-label="ANNA is awake"><i></i></button></div>
-      <button class="btn ask" data-act="chat-open">Talk to ANNA</button></section>
+      <button class="btn ask" data-act="chat-open">Talk to ANNA</button>${checkinHTML()}</section>
       <div class="quiet">${g.today.length ? sh('Today', more('tasks')) + g.today.slice(0, 3).map(taskCard).join('') : ''}
       ${rem.length ? sh('Reminders', `<button class="link" data-act="view" data-id="reminders">See all</button>`) + rem.map(remCard).join('') : ''}
       ${!g.today.length && !rem.length ? `<div class="empty">A quiet day. ANNA is here when you need her.</div>` : ''}</div>`;
@@ -170,14 +172,16 @@ const screens = {
       ${ns.map((n) => `<circle class="nd" cx="${n.x}" cy="${n.y}" r="${4 + (n.i % 3)}" fill="${n.c}" style="animation-delay:${(n.i * 0.37).toFixed(2)}s"/>`).join('')}${ghost}
       <circle cx="150" cy="90" r="26" fill="url(#gl)"/><circle cx="150" cy="90" r="13" fill="#0B0B0D" stroke="#C4C8CE"/><text x="150" y="96" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-weight="700" font-size="16" fill="#E6E8EC">A</text></svg>`;
     const fbs = (S.fb || []).slice(0, 8);
-    return top() + title('Mind & memory', 'Brain', 'Anna’s offline AI and what she keeps in mind. Stored only on this device.') +
-      `<div id="engine">${engineHTML()}</div>${accessHTML()}
-      <div class="neural">${net}<div class="cap"><span>${S.mem.length} memories</span><span>${cats.length - 1} categories</span></div></div>
-      <div class="adds">${addBtn('mem', '＋ Remember')}</div>
+    const views = [['journal', 'Journal'], ['goals', 'Goals'], ['mem', 'Memories'], ['ai', 'AI']];
+    const seg = `<div class="seg" role="tablist">${views.map(([k, n]) => `<button data-act="bview" data-id="${k}" role="tab" aria-selected="${k === brainView}" class="${k === brainView ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    const body = brainView === 'ai' ? `<div id="engine">${engineHTML()}</div>${accessHTML()}` : brainView === 'journal' ? journalHTML() : brainView === 'goals' ? goalsHTML() :
+      `<div class="mute" style="margin:4px 2px 8px">Everything ANNA remembers about you. She only saves something after asking you. Tap a memory to edit it.</div><div class="neural">${net}<div class="cap"><span>${S.mem.length} memories</span><span>${cats.length - 1} categories</span></div></div>
+      <div class="adds">${addBtn('mem', '＋ Remember')}${S.mem.length ? '<button class="btn bad" data-act="mem-clear">Delete all</button>' : ''}</div>
       <input id="q" class="search" type="search" placeholder="Search memories" value="${esc(memQ)}" aria-label="Search memories">
       <div class="chips">${cats.map((c) => `<button data-act="memcat" data-id="${esc(c)}" class="${c === memCat ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
       <div id="memlist">${memList()}</div>
       ${sh('Feedback history')}<div class="card">${fbs.map((f) => `<div class="item"><div class="dot ${f.rating === 'up' ? '' : 'g'}">${ic(f.rating === 'up' ? 'check' : 'x')}</div><div class="grow">${esc(f.text)}<div class="mute">${f.rating === 'up' ? 'Marked helpful' : 'Marked not right'} · ${ago(f.at)}</div></div></div>`).join('') || empty('Feedback you give on memories appears here.')}</div>`;
+    return top() + title('Mind & memory', 'Brain', 'Your journal, goals and what ANNA keeps in mind. Stored only on this device.') + seg + body;
   },
   data() {
     const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
@@ -191,7 +195,8 @@ const screens = {
       <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
         <div class="row"><button class="btn grow" data-act="export">Export backup</button><button class="btn sage grow" data-act="import">Restore…</button></div><input id="file" type="file" accept="application/json,.json" hidden>
         ${hasPrev ? '<button class="link" data-act="undo-restore">Undo last restore / erase</button>' : ''}<div class="mute" style="margin-top:8px">${esc(L.describeCounts(L.counts(S)))}</div></div>
-      <div class="card"><h2>Preferences</h2><label class="f"><span>Your name</span><input id="nm" value="${esc(S.settings.name || '')}" maxlength="40" placeholder="For your greeting" autocomplete="given-name"></label>
+      <div class="card"><h2>What ANNA keeps</h2><div class="mute" style="margin:4px 0 8px">Each kind of personal data is stored separately on this device. Your journal is never copied into memories and is only shown to the AI when you tap Reflect with ANNA.</div><div class="status">${[['memories', 'Memories'], ['journal', 'Journal entries'], ['goals', 'Goals'], ['progress', 'Progress logs'], ['preferences', 'Preferences']].map(([k, n]) => `<b>${n}</b><span>${LIFE[k].length}${LIFE[k].length && k !== 'preferences' ? ` · <button class="link" style="min-height:0;padding:0" data-act="store-clear" data-id="${k}">Delete all</button>` : ''}</span>`).join('')}</div><button class="btn sage sm" style="margin-top:10px" data-act="bview-go" data-id="mem">Review memories</button></div>
+      <div class="card"><h2>Preferences</h2><label class="f"><span>How should ANNA support you?</span><select id="style">${LF.STYLES.map(([k, n]) => `<option value="${k}" ${k === prefOf('style') ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label class="f"><span>Your name</span><input id="nm" value="${esc(S.settings.name || '')}" maxlength="40" placeholder="For your greeting" autocomplete="given-name"></label>
         <label class="f"><span>Currency</span><select id="cursel">${curOpts.map(([k, n]) => `<option value="${esc(k)}" ${k === cur() ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="custom" ${isCustom ? 'selected' : ''}>Other symbol…</option></select></label>
         <label class="f" id="curwrap" ${isCustom ? '' : 'hidden'}><span>Currency symbol</span><input id="cur" value="${esc(isCustom ? cur() : '')}" maxlength="5"></label>
         <button class="btn soft sm" data-act="prefs">Save preferences</button></div>
@@ -252,7 +257,8 @@ function chatMain() {
     note = `<div class="card banner-in"><b>Anna can’t answer yet</b><div class="mute" style="margin:6px 0 12px">${msg}${S.chat.length ? ' Your past conversation is below.' : ''}</div>${a.state === 'cached' ? '<button class="btn full" data-act="ai-load">Load Anna’s brain</button>' : ['loading', 'downloading', 'verifying'].includes(a.state) ? '<div class="bar busy"><i></i></div>' : '<button class="btn full" data-act="chat-to-brain">Open Brain setup</button>'}${a.error && a.state !== 'unsupported' ? `<div class="warn" style="margin-top:10px">${esc(a.error)}</div>` : ''}</div>`;
   }
   const sugg = ready && !S.chat.length ? `<div class="empty">Ask about your day, money or business, or anything else.<br>Anna only sees what you allow in Brain.</div>${SUGG.map((q, i) => `<button class="btn sage full" style="margin:6px 0" data-act="chat-suggest" data-id="${i}">${q}</button>`).join('')}` : '';
-  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}</div>`;
+  const rem = pendingRemember ? `<div class="card" style="margin:4px 0"><div>${pendingRemember.style ? `Want me to remember that you prefer: <b>${esc(LF.STYLES.find(([k]) => k === pendingRemember.style)[1])}</b>?` : `Want me to remember this?<div class="mute" style="margin-top:4px">“${esc(pendingRemember.text.slice(0, 160))}”</div>`}</div><div class="row" style="margin-top:10px"><button class="btn sm" data-act="rem-yes">Yes, remember</button><button class="btn sm sage" data-act="rem-no">No</button></div></div>` : '';
+  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}</div>`;
 }
 function chatPanel() {
   const on = AI.ACCESS.filter(([k]) => S.settings.ai[k]).map(([, n]) => n), busy = AI.ai.busy;
@@ -260,7 +266,7 @@ function chatPanel() {
     <div id="chatmain" class="chatmain">${chatMain()}</div>
     <form data-form="chat" class="chatin"><textarea name="msg" rows="1" placeholder="${AI.ai.state === 'ready' ? 'Ask Anna…' : 'Load the AI to ask a question'}" maxlength="800" required aria-label="Message"></textarea>${busy ? `<button type="button" class="btn sage" data-act="chat-stop" aria-label="Stop">${ic('stop')}</button>` : `<button class="btn" id="send" ${AI.ai.state === 'ready' ? '' : 'disabled'}>Send</button>`}</form></div>`;
 }
-const ctxPanel = () => `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="What Anna sees"><div class="gr"></div><div class="row"><h2 class="grow">What Anna sees</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:6px 0 10px">This is the complete data block given to the local model with each question (memories are picked by relevance to your question). It never leaves your device.</div><pre class="diag">${esc(AI.buildContext(S, S.settings.ai))}</pre></div>`;
+const ctxPanel = () => `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="What Anna sees"><div class="gr"></div><div class="row"><h2 class="grow">What Anna sees</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:6px 0 10px">This is the complete data block given to the local model with each question (memories are picked by relevance to your question). It never leaves your device.</div><pre class="diag">${esc(AI.buildContext(S, S.settings.ai, Date.now(), '', aiLife()))}</pre></div>`;
 const restorePanel = () => { const r = pendingRestore; if (!r) return '';
   if (r.env && !r.state) return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Restore backup"><div class="gr"></div><div class="row"><h2 class="grow">Encrypted backup</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:8px 0">${esc(r.name)} · enter the password that was used when this backup was made.</div><form data-form="restorepw" novalidate>${fld('Backup password', '<input name="pw" type="password" autocomplete="current-password" required>')}<button class="btn full" style="margin-top:12px">Open backup</button></form></div>`; const a = L.counts(r.state), b = L.counts(S);
   return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Restore backup"><div class="gr"></div><div class="row"><h2 class="grow">Restore this backup?</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
@@ -276,12 +282,12 @@ let chatKey = '';
 const paintChat = (force) => { const m = $('#chatmain'); if (!m) return; const a = AI.ai, key = a.state + a.busy + a.error;
   if (!force && key !== chatKey) { chatKey = key; const ta = $('.chatin textarea'), v = ta?.value, foc = document.activeElement === ta; $('#sheet').innerHTML = chatPanel(); const t2 = $('.chatin textarea'); if (t2) { t2.value = v || ''; if (foc) t2.focus(); } }
   const mm = $('#chatmain'), o = $('#msgs'), near = !o || o.scrollHeight - o.scrollTop - o.clientHeight < 120; mm.innerHTML = chatMain(); const x = $('#msgs'); if (x && near) mm.scrollTop = mm.scrollHeight; };
-const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.buildMessages(AI.buildContext(S, S.settings.ai, Date.now(), ''), S.chat, '', cur()).slice(0, -1)); };
-async function sendChat(text) {
+const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.buildMessages(AI.buildContext(S, S.settings.ai, Date.now(), '', aiLife()), S.chat, '', cur()).slice(0, -1)); };
+async function sendChat(text, opts) {
   text = text.trim(); if (!text || AI.ai.state !== 'ready' || AI.ai.busy) return;
-  const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); paintChat(true); save();
+  const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
-    const ctx = AI.buildContext(S, S.settings.ai, Date.now(), text);
+    const ctx = AI.buildContext(S, S.settings.ai, Date.now(), text, aiLife());
     await AI.ask(AI.buildMessages(ctx, hist, text, cur()), (t) => { a.content = t; paintChat(true); });
     a.content = a.content.trim().replace(/^[.,:;]+(?=\s*\S)/, '').trim(); if (!a.content) a.content = '(Anna produced no answer. Try rephrasing.)';
   } catch (e) { a.content = ''; a.error = AI.friendly(e); }
@@ -302,7 +308,12 @@ const FORMS = {
   mem: (r = {}) => [r.id ? 'Edit memory' : 'Remember', `${fld('Memory', `<textarea name="content" rows="3" placeholder="e.g. I do my best work in the morning" maxlength="500" required>${esc(r.content || '')}</textarea>`)}<div class="two">${fld('Confidence', `<select name="status">${opt('confirmed', 'Confirmed', r.status || 'confirmed')}${opt('temporary', 'Temporary', r.status)}${opt('assumption', 'Assumption', r.status)}</select>`)}${fld('Category', `<input name="category" maxlength="40" list="mcats" ${val(r.category || 'General')}>`)}</div>${catList('mcats', [...S.mem.map((m) => m.category), 'General', 'Personal', 'Work', 'Health', 'Family', 'Money'])}<div class="mute">Assumptions are never shown to the AI.</div>`, r.id ? 'Save memory' : 'Remember'],
 };
 FORMS.chpw = () => ['Change password', `${fld('Current password', '<input name="old" type="password" autocomplete="current-password" required>')}${fld('New password (at least 8 characters)', '<input name="pw" type="password" autocomplete="new-password" required>')}${fld('Repeat new password', '<input name="pw2" type="password" autocomplete="new-password" required>')}<div class="mute">Backups made before the change still open with the old password.</div>`, 'Change password'];
+FORMS.journal = (r = {}) => [r.id ? 'Edit entry' : 'New journal entry', `<div class="mute" style="margin:2px 4px 8px">Private. ANNA only reads this if you tap Reflect with ANNA.</div>${fld('Date', `<input name="date" type="date" required ${val(r.date || LF.todayISO())}>`)}<div class="f"><span>Mood</span><div class="chips moods" style="margin:0;padding:2px 0">${LF.MOODS.map(([v, n]) => `<label class="moodopt"><input type="radio" name="mood" value="${v}" ${Number(r.mood) === v ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div></div><div class="f"><span>Tags</span><div class="chips" style="margin:0;padding:2px 0">${LF.TAGS.map(([v, n]) => `<label class="moodopt"><input type="checkbox" name="tag_${v}" ${(r.tags || []).includes(v) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div></div>${fld('Title', `<input name="title" maxlength="120" placeholder="Optional" ${val(r.title)}>`)}${fld('Write freely', `<textarea name="text" rows="7" maxlength="8000" placeholder="What happened? How do you feel?" required>${esc(r.text || '')}</textarea>`)}`, r.id ? 'Save entry' : 'Save entry'];
+FORMS.goal = (r = {}) => [r.id ? 'Edit goal' : 'New goal', `${fld('Goal', `<input name="title" maxlength="120" placeholder="e.g. Walk 30 minutes" required ${val(r.title)}>`)}<div class="two">${fld('Type', `<select name="horizon">${LF.HORIZONS.map(([k, n]) => opt(k, n, r.horizon || 'weekly')).join('')}</select>`)}${fld('Area', `<select name="area">${[['personal', 'Personal'], ['health', 'Health'], ['emotional', 'Emotional'], ['career', 'Career'], ['business', 'Business'], ['financial', 'Financial']].map(([k, n]) => opt(k, n, r.area || 'personal')).join('')}</select>`)}</div><div class="two">${fld('Target (optional)', `<input name="target" inputmode="decimal" placeholder="e.g. 3" ${val(r.target)}>`)}${fld('Unit', `<input name="unit" maxlength="20" placeholder="times, km, R…" ${val(r.unit)}>`)}</div><div class="mute">Daily goals and habits reset each day, weekly ones each Monday, monthly ones on the 1st.</div>`, r.id ? 'Save goal' : 'Add goal'];
+FORMS.glog = () => { const g = LIFE.goals.find((x) => x.id === logGoal); return ['Log progress', `<div class="mute" style="margin:0 4px 8px">${esc(g?.title || '')}</div><div class="two">${fld(`Amount${g?.unit ? ' (' + esc(g.unit) + ')' : ''}`, '<input name="value" inputmode="decimal" value="1" required>')}${fld('Date', `<input name="date" type="date" ${val(LF.todayISO())}>`)}</div>${fld('Note', '<input name="note" maxlength="200" placeholder="Optional">')}`, 'Log it']; };
+let logGoal = null;
 const KEY = { task: 'tasks', reminder: 'reminders', tx: 'tx', bill: 'bills', budget: 'budgets', biz: 'biz', mem: 'mem' };
+const LIFEKEY = { journal: 'journal', goal: 'goals' };
 const NAME = { task: 'Task', reminder: 'Reminder', tx: 'Entry', bill: 'Bill', budget: 'Budget', biz: 'Record', mem: 'Memory' };
 let navStack = [], lastTab = null, goingBack = false;
 function goBack() {
@@ -318,9 +329,9 @@ function render(anim) {
   const el = $('#screen'), y = el.scrollTop; el.innerHTML = screens[tab]();
   if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); el.scrollTop = 0; } else el.scrollTop = y;
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}" aria-label="${n}" ${k === tab ? 'aria-current="page"' : ''}>${ic(k)}${n}</button>`).join('');
-  const rec = editId ? S[KEY[sheet]]?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec);
+  const rec = editId ? (LIFEKEY[sheet] ? LIFE[LIFEKEY[sheet]] : S[KEY[sheet]])?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec);
   const special = sheet === 'chat' ? chatPanel() : sheet === 'ctx' ? ctxPanel() : sheet === 'restore' ? restorePanel() : '';
-  $('#sheet').innerHTML = special ? special : f ? `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="${f[0]}"><div class="gr"></div><div class="row"><h2 class="grow">${f[0]}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><form data-form="${sheet}" novalidate>${f[1]}<button class="btn full" style="margin-top:14px">${f[2]}</button>${rec ? `<button type="button" class="btn bad full" style="margin-top:8px" data-act="del" data-k="${sheet}" data-id="${rec.id}">Delete ${NAME[sheet].toLowerCase()}</button>` : ''}</form></div>` : '';
+  $('#sheet').innerHTML = special ? special : f ? `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="${f[0]}"><div class="gr"></div><div class="row"><h2 class="grow">${f[0]}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><form data-form="${sheet}" novalidate>${f[1]}<button class="btn full" style="margin-top:14px">${f[2]}</button>${rec ? `<button type="button" class="btn bad full" style="margin-top:8px" data-act="${LIFEKEY[sheet] ? 'ldel' : 'del'}" data-k="${sheet}" data-id="${rec.id}">Delete ${(NAME[sheet] || 'entry').toLowerCase()}</button>` : ''}</form></div>` : '';
   document.body.classList.toggle('lock', !!(f || special));
   if (sheet === 'chat') { chatKey = AI.ai.state + AI.ai.busy + AI.ai.error; const x = $('#chatmain'); if (x) x.scrollTop = x.scrollHeight; }
   if ((tab === 'brain' || tab === 'home') && AI.ai.state === 'unknown') AI.refresh();
@@ -379,7 +390,7 @@ const actions = {
   'rem-done': (id) => { const r = byId(S.reminders, id), rep = r && !r.done && r.repeat && r.repeat !== 'none'; mutate(() => L.completeReminder(S, id), { close: false }); if (rep) toast(`Next: ${dtstr(byId(S.reminders, id).at)}`); },
   'rem-ics': async (id) => { const r = byId(S.reminders, id); if (!r) return; const res = await download(`anna-reminder-${L.tsToDay(r.at)}.ics`, L.reminderICS(r), 'text/calendar'); if (res !== 'cancelled') toast('Open the file and tap “Add to Calendar” so your iPhone alerts you even when Anna is closed.', { ms: 6000 }); },
   del: (id, el) => { const k = el.dataset.k, key = KEY[k], arr = S[key], i = arr.findIndex((x) => x.id === id); if (i < 0) return; const item = arr[i];
-    mutate(() => { S[key] = arr.filter((x) => x.id !== id); }); undo = { key, item, i };
+    mutate(() => { arr.splice(i, 1); }); undo = { key, item, i };
     toast(`${NAME[k]} deleted`, { ms: 6000, action: { label: 'Undo', fn: () => { if (!undo) return; const u = undo; undo = null; mutate(() => { S[u.key].splice(Math.min(u.i, S[u.key].length), 0, u.item); }, { close: false }); } } }); },
   edit: (id, el) => { sheet = el.dataset.k; editId = id; render(); },
   view: (id) => { tab = 'tasks'; taskView = id; sheet = null; render(true); },
@@ -403,25 +414,41 @@ const actions = {
   pay: (id) => { const b = byId(S.bills, id); const rec = confirm(`Mark “${b.name}” as paid and record ${L.fmt(b.amount_cents, cur())} as an expense in Money?\n\nOK = paid + record expense\nCancel = just mark paid`); mutate(() => L.payBill(S, id, { recordExpense: rec }), { close: false }); toast(b.repeat_monthly ? `Paid. Next due ${dstr(b.due_at)}.` : 'Marked paid.'); },
   unpay: (id) => mutate(() => L.unpayBill(S, id), { close: false }),
   'inv-paid': (id) => mutate(() => { const r = byId(S.biz, id); r.status = 'paid'; r.paid_at = Date.now(); }, { close: false }),
-  export: async () => { if (!auth || !bkKey) return toast('Unlock Anna first.'); const env = await A.encryptBackup({ ...S, logo: logoUrl, exported_at: Date.now(), app_version: VERSION }, auth, bkKey), name = `anna-backup-${L.tsToDay(Date.now())}.json`; const r = await download(name, JSON.stringify(env), 'application/json'); if (r !== 'cancelled') { S.settings.last_backup_at = Date.now(); save(); toast(`Backup ready: ${L.describeCounts(L.counts(S))}.`, { ms: 5000 }); } },
+  export: async () => { if (!auth || !bkKey) return toast('Unlock Anna first.'); const env = await A.encryptBackup({ ...S, life: { ...LIFE, memories: S.mem }, logo: logoUrl, exported_at: Date.now(), app_version: VERSION }, auth, bkKey), name = `anna-backup-${L.tsToDay(Date.now())}.json`; const r = await download(name, JSON.stringify(env), 'application/json'); if (r !== 'cancelled') { S.settings.last_backup_at = Date.now(); save(); toast(`Backup ready: ${L.describeCounts(L.counts(S))}.`, { ms: 5000 }); } },
   import: () => $('#file').click(),
   'restore-confirm': async () => {
     const r = pendingRestore; if (!r) return; pendingRestore = null; sheet = null;
-    await kvSet('prev', S); hasPrev = true; S = r.state; if (S.logo !== undefined) { await setLogo(S.logo || null); } delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
-    const check = L.validateBackup(await kvGet('state')), want = JSON.stringify(L.counts(r.state)), got = check.ok ? JSON.stringify(L.counts(check.state)) : '';
+    await kvSet('prev', { ...S, life: LIFE }); hasPrev = true; S = r.state; if (S.logo !== undefined) { await setLogo(S.logo || null); } await applyLife(S.life, S.mem); delete S.life; delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
+    const check = L.validateBackup(await kvGet('state')), want = JSON.stringify(L.counts(r.state)), got = check.ok ? JSON.stringify(L.counts({ ...check.state, mem: (await LF.loadAll()).memories })) : '';
     render(true); toast(got === want ? `Restored and verified: ${L.describeCounts(L.counts(S))}.` : 'Restore saved, but verification did not match. Export a backup and check your data.', { alert: true, ms: 8000 });
   },
-  'undo-restore': async () => { const p = await kvGet('prev'); const v = p && L.validateBackup(p); if (!v?.ok) return toast('No safety copy available.'); if (!confirm(`Put back the data from before your last restore/erase? (${L.describeCounts(L.counts(v.state))})`)) return; const curS = S; S = v.state; normSettings(); await save(); await kvSet('prev', curS); render(true); toast('Previous data restored.'); },
-  prefs: () => { const sel = $('#cursel').value, c = sel === 'custom' ? ($('#cur').value || '').trim().slice(0, 5) : sel; mutate(() => { S.settings.currency = c || L.DEFAULT_CURRENCY; S.settings.name = ($('#nm').value || '').trim().slice(0, 40); }); toast('Preferences saved.'); },
+  'undo-restore': async () => { const p = await kvGet('prev'); const v = p && L.validateBackup(p); if (!v?.ok) return toast('No safety copy available.'); if (!confirm(`Put back the data from before your last restore/erase? (${L.describeCounts(L.counts(v.state))})`)) return; const curS = { ...S, life: LIFE }; S = v.state; await applyLife(S.life, S.mem); delete S.life; normSettings(); await save(); await kvSet('prev', curS); render(true); toast('Previous data restored.'); },
+  prefs: () => { setPref('style', $('#style').value); const sel = $('#cursel').value, c = sel === 'custom' ? ($('#cur').value || '').trim().slice(0, 5) : sel; mutate(() => { S.settings.currency = c || L.DEFAULT_CURRENCY; S.settings.name = ($('#nm').value || '').trim().slice(0, 40); }); toast('Preferences saved.'); },
   notif: async () => { try { const p = await Notification.requestPermission(); render(); if (p === 'granted') notify('Anna', 'Reminder alerts are on.'); } catch { toast('This browser cannot show notifications. Open Anna from the Home Screen icon.'); } },
   'notif-test': async () => { const ok = await notify('Anna', 'This is how reminders will look.'); toast(ok ? 'Test alert sent.' : 'Could not show a notification.'); },
   lock: () => lockNow(),
+  bview: (id) => { brainView = id; render(); },
+  'bview-go': (id) => { brainView = id; tab = 'brain'; render(true); },
+  'mem-clear': async () => { if (!confirm(`Delete everything ANNA remembers (${S.mem.length} memories)? This cannot be undone.`)) return; S.mem.splice(0); await LF.clear('memories'); render(); await save(); toast('All memories deleted.'); },
+  'store-clear': async (id) => { const n = { memories: 'memories', journal: 'journal entries', goals: 'goals and their progress', progress: 'progress logs' }[id]; if (!confirm(`Delete all ${n}? This cannot be undone.`)) return; if (id === 'memories') S.mem.splice(0); LIFE[id] = id === 'memories' ? S.mem : []; await LF.clear(id); if (id === 'goals') { LIFE.progress = []; await LF.clear('progress'); } render(); await save(); toast('Deleted.'); },
+  ldel: async (id, el) => { const store = LIFEKEY[el.dataset.k], arr = LIFE[store], i = arr.findIndex((x) => x.id === id); if (i < 0) return; const item = arr.splice(i, 1)[0]; await LF.del(store, id); let logs = [];
+    if (store === 'goals') { logs = LIFE.progress.filter((p) => p.goal === id); LIFE.progress = LIFE.progress.filter((p) => p.goal !== id); for (const p of logs) await LF.del('progress', p.id); }
+    sheet = null; editId = null; render(); toast(`${el.dataset.k === 'goal' ? 'Goal' : 'Entry'} deleted`, { ms: 6000, action: { label: 'Undo', fn: async () => { arr.splice(i, 0, item); await LF.put(store, item); for (const p of logs) { LIFE.progress.push(p); await LF.put('progress', p); } render(); } } }); },
+  jtag: (id) => { jTag = jTag === id ? '' : id; $('#jlist').innerHTML = journalList(); document.querySelectorAll('[data-act="jtag"]').forEach((b) => b.classList.toggle('on', b.dataset.id === jTag)); },
+  glog: (id) => { logGoal = id; sheet = 'glog'; editId = null; render(); },
+  gdone: async (id) => { const g = LIFE.goals.find((x) => x.id === id); if (!g) return; g.done = !g.done; g.done_at = g.done ? Date.now() : null; await LF.put('goals', g); render(); },
+  reflect: async (id) => { const e = LIFE.journal.find((x) => x.id === id); if (!e) return; if (AI.ai.state !== 'ready') { brainView = 'ai'; render(); return toast('Load ANNA’s brain first, then tap Reflect again.', { ms: 5000 }); }
+    sheet = 'chat'; render(); paintOrbs(); sendChat(`I’d like to reflect on this private journal entry with you (${e.date}${e.mood ? ', mood: ' + LF.MOODS.find(([v]) => v === e.mood)[1].toLowerCase() : ''}). Please listen first and help me reflect gently:\n\n${e.title ? e.title + ': ' : ''}${e.text.slice(0, 1500)}`, { noRemember: true }); },
+  'rem-yes': async () => { const p = pendingRemember; pendingRemember = null; if (!p) return; if (p.style) { await setPref('style', p.style); toast('Got it. I’ll remember how you like to be supported.'); } else { const m = { id: L.uid(), content: p.text.slice(0, 500), category: 'From chat', status: 'confirmed', created_at: Date.now() }; S.mem.unshift(m); await save(); toast('Remembered. You can review it in Brain → Memories.'); } paintChat(true); },
+  'rem-no': () => { pendingRemember = null; paintChat(true); },
+  checkin: () => { checkinShown = true; sheet = 'journal'; editId = null; render(); },
+  'checkin-x': () => { checkinShown = true; const c = $('#checkin'); if (c) c.remove(); },
   back: () => goBack(),
   'logo-pick': () => $('#logofile').click(),
   'logo-reset': async () => { await setLogo(null); render(); toast('Default logo restored.'); },
   'reset-anna': async () => { if (prompt('This deletes ALL Anna data, your password and logo on this device. Your encrypted backups still need the old password. Type ERASE to continue.') !== 'ERASE') return; for (const k of ['state', 'prev', 'auth', 'logo']) await kvSet(k, null); try { localStorage.removeItem('anna-web:fails'); } catch {} location.reload(); },
   'setup-restore': () => $('#sfile').click(),
-  erase: async () => { if (confirm('Erase ALL Anna data on this device (tasks, reminders, money, business, memories, chat)? Export a backup first.') && confirm('Really erase everything? (A safety copy is kept so you can undo once.)')) { await kvSet('prev', S); hasPrev = true; S = L.emptyState(); normSettings(); await save(); tab = 'home'; render(true); toast('All data erased.', { action: { label: 'Undo', fn: () => actions['undo-restore']() } }); } },
+  erase: async () => { if (confirm('Erase ALL Anna data on this device (tasks, reminders, money, business, memories, journal, goals, chat)? Export a backup first.') && confirm('Really erase everything? (A safety copy is kept so you can undo once.)')) { await kvSet('prev', { ...S, life: LIFE }); hasPrev = true; S = L.emptyState(); normSettings(); await applyLife(null, []); await save(); tab = 'home'; render(true); toast('All data erased.', { action: { label: 'Undo', fn: () => actions['undo-restore']() } }); } },
 };
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
@@ -430,6 +457,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('input', (e) => {
   if (e.target.id === 'q') { memQ = e.target.value; $('#memlist').innerHTML = memList(); }
   if (e.target.id === 'bq') { bizQ = e.target.value; $('#bizlist').innerHTML = bizList(); }
+  if (e.target.id === 'jq') { jQ = e.target.value; $('#jlist').innerHTML = journalList(); }
   if (e.target.matches('.chatin textarea')) { e.target.style.height = 'auto'; e.target.style.height = Math.min(120, e.target.scrollHeight) + 'px'; }
 });
 // No pinch zoom (Safari ignores user-scalable=no); double-tap zoom is off via touch-action.
@@ -459,8 +487,9 @@ document.addEventListener('focusout', () => setTimeout(() => { if (!typing(docum
 const req = (f, names) => names.find((n) => !String(f[n] ?? '').trim());
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('form[data-form]'); if (!form) return; e.preventDefault();
-  const f = Object.fromEntries(new FormData(form)), now = Date.now(), k = form.dataset.form, rec = editId ? byId(S[KEY[k]] || [], editId) : null;
+  const f = Object.fromEntries(new FormData(form)), now = Date.now(), k = form.dataset.form, rec = editId ? byId((LIFEKEY[k] ? LIFE[LIFEKEY[k]] : S[KEY[k]]) || [], editId) : null;
   if (k === 'chat') { const ta = form.querySelector('textarea'), t = ta.value; ta.value = ''; ta.style.height = ''; return sendChat(t); }
+  if (k === 'journal' || k === 'goal' || k === 'glog') return saveLifeForm(k, f, form, rec);
   const missing = req(f, { task: ['title'], reminder: ['title', 'day', 'time'], tx: ['amount'], bill: ['name', 'amount', 'due'], budget: ['category', 'limit'], biz: ['amount', 'description'], mem: ['content'] }[k] || []);
   if (missing) { const el = form.querySelector(`[name=${missing}]`); el?.focus(); return toast('Please fill in: ' + (el?.closest('label')?.querySelector('span')?.textContent || missing)); }
   const up = (obj) => mutate(() => { if (rec) Object.assign(rec, obj); else S[KEY[k]][k === 'tx' || k === 'bill' || k === 'biz' || k === 'budget' ? 'push' : 'unshift']({ id: L.uid(), ...obj }); });
@@ -525,7 +554,7 @@ document.addEventListener('submit', async (e) => {
     if (k === 'setuprestore') {
       const env = JSON.parse(pendingFile.text); if (!env.encrypted) throw new Error('Choose an encrypted Anna backup (made with v0.4.1 or later).'); if (env.owner && env.owner !== A.OWNER.name) throw new Error('This backup belongs to a different owner.');
       const r = L.validateBackup(await A.decryptBackup(env, f.pw)); if (!r.ok) throw new Error(r.error);
-      auth = env.auth; await kvSet('auth', auth); S = r.state; await setLogo(S.logo || null); delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
+      auth = env.auth; await kvSet('auth', auth); S = r.state; await setLogo(S.logo || null); await applyLife(S.life, S.mem); delete S.life; delete S.logo; delete S.exported_at; delete S.app_version; normSettings(); await save();
       await unlocked(f.pw); return toast(`Restored: ${L.describeCounts(L.counts(S))}.`, { alert: true, ms: 7000 });
     }
     if (k === 'restorepw') { const r = L.validateBackup(await A.decryptBackup(pendingRestore.env, f.pw)); if (!r.ok) throw new Error(r.error); pendingRestore = { name: pendingRestore.name, state: { ...r.state, logo: r.state.logo ?? null, exported_at: pendingRestore.env.exported_at } }; return render(); }
@@ -534,16 +563,50 @@ document.addEventListener('submit', async (e) => {
   finally { if (btn?.isConnected) btn.disabled = false; }
 }, true);
 
+// ---- personal life record (life.js stores) ----
+async function applyLife(life, legacyMem) { const l = LF.validateLife(life); if (!life && legacyMem?.length) l.memories = legacyMem; await LF.replaceAll(l); LIFE = l; S.mem = LIFE.memories; }
+async function syncMem() { if (!LIFE_READY) return; const have = await LF.loadAll().then((l) => l.memories).catch(() => null); if (!have) return; const ids = new Set(S.mem.map((m) => m.id)); for (const m of have) if (!ids.has(m.id)) await LF.del('memories', m.id); for (const m of S.mem) await LF.put('memories', m); }
+let LIFE_READY = false;
+const prefOf = (id) => LIFE.preferences.find((p) => p.id === id)?.value;
+async function setPref(id, value) { const p = { id, value, at: Date.now() }; LIFE.preferences = LIFE.preferences.filter((x) => x.id !== id).concat(p); await LF.put('preferences', p); }
+const aiLife = () => ({ memories: S.mem, goals: LIFE.goals, progress: LIFE.progress, style: prefOf('style') });
+function offerRemember(text, opts) { const st = LF.styleFromText(text); if (st && st !== prefOf('style')) { pendingRemember = { style: st }; return; } const c = LF.rememberCandidate(text); pendingRemember = c ? { text: c } : null; }
+function checkinHTML() { if (checkinShown) return ''; const q = LF.checkinPrompt(prefOf('checkin'), LIFE.journal); if (!q) return ''; checkinShown = true; setPref('checkin', Date.now()); return `<div class="checkin" id="checkin"><button class="link" data-act="checkin">${esc(q)}</button><button class="trash" data-act="checkin-x" aria-label="Not now">${ic('x')}</button></div>`; }
+const moodName = (v) => (LF.MOODS.find(([k]) => k === Number(v)) || [, ''])[1];
+function journalList() { const es = LF.searchJournal(LIFE.journal, jQ, jTag);
+  return es.map((e) => `<div class="card"><div class="tap" data-act="edit" data-k="journal" data-id="${e.id}"><div class="mute">${esc(new Date(e.date + 'T12:00:00').toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))}${e.mood ? ' · ' + esc(moodName(e.mood)) : ''}</div>${e.title ? `<b>${esc(e.title)}</b>` : ''}<div style="overflow-wrap:anywhere;white-space:pre-wrap">${esc(e.text.length > 280 ? e.text.slice(0, 280) + '…' : e.text)}</div><div>${(e.tags || []).map((t) => `<span class="chip">${esc((LF.TAGS.find(([k]) => k === t) || [, t])[1])}</span>`).join('')}</div></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm sage" data-act="reflect" data-id="${e.id}">Reflect with ANNA</button><span class="grow"></span>${editBtn('journal', e.id)}</div></div>`).join('') || `<div class="card">${empty(LIFE.journal.length ? 'No entries match.' : 'Your journal is private. Write whenever you like.')}</div>`; }
+function journalHTML() { return `<div class="adds">${addBtn('journal', '＋ New entry')}</div><input id="jq" class="search" type="search" placeholder="Search your journal" value="${esc(jQ)}" aria-label="Search journal">
+  <div class="chips">${LF.TAGS.map(([k, n]) => `<button data-act="jtag" data-id="${k}" class="${k === jTag ? 'on' : ''}">${n}</button>`).join('')}</div><div class="mute" style="margin:2px 2px 8px">${ic('check').replace('class="i"', 'class="i" style="width:14px;height:14px;vertical-align:-2px"')} Private: never copied into memories, never read by ANNA unless you tap Reflect with ANNA.</div><div id="jlist">${journalList()}</div>`; }
+function goalsHTML() { const rv = LF.weeklyReview(LIFE), active = LIFE.goals.filter((g) => !g.done), done = LIFE.goals.filter((g) => g.done);
+  const card = (g) => { const p = LF.goalProgress(g, LIFE.progress), st = g.horizon === 'habit' ? LF.streak(g.id, LIFE.progress) : 0;
+    return `<div class="card"><div class="row"><div class="grow tap" data-act="edit" data-k="goal" data-id="${g.id}"><b class="${g.done ? 'done' : ''}">${esc(g.title)}</b><div class="mute">${esc((LF.HORIZONS.find(([k]) => k === g.horizon) || [, ''])[1])}${p.target ? ` · ${p.total} of ${p.target}${g.unit ? ' ' + esc(g.unit) : ''}` : p.entries ? ` · ${p.total}${g.unit ? ' ' + esc(g.unit) : ''} logged` : ' · nothing logged yet'}${st ? ` · ${st}-day streak` : ''}</div></div>${g.done ? '' : `<button class="btn sm" data-act="glog" data-id="${g.id}">Log</button>`}<button class="edit" data-act="gdone" data-id="${g.id}" aria-label="${g.done ? 'Mark not achieved' : 'Mark achieved'}">${ic('check')}</button></div>${p.target ? `<div class="bar"><i style="width:${p.pct}%"></i></div>` : ''}</div>`; };
+  return `<div class="card"><h2>This week</h2><div class="mute" style="margin:4px 0 6px">From your own records only.</div>${rv.lines.map((l) => `<div>${esc(l)}</div>`).join('')}${rv.journalEntries ? `<div class="mute" style="margin-top:6px">${rv.journalEntries} journal entr${rv.journalEntries === 1 ? 'y' : 'ies'}${rv.avgMood ? ` · average mood ${rv.avgMood}/5` : ''}</div>` : ''}</div>
+  <div class="adds">${addBtn('goal', '＋ Goal or habit')}</div>${active.map(card).join('') || `<div class="card">${empty('Add a daily, weekly, monthly or long-term goal, or a habit.')}</div>`}${done.length ? sh('Achieved') + done.map(card).join('') : ''}`; }
+async function saveLifeForm(k, f, form, rec) {
+  const now = Date.now();
+  if (k === 'journal') { if (!String(f.text || '').trim()) { form.querySelector('[name=text]').focus(); return toast('Please write something first.'); }
+    const e = { ...(rec || { id: L.uid(), created_at: now }), date: f.date || LF.todayISO(), mood: f.mood ? Number(f.mood) : null, tags: LF.TAGS.map(([t]) => t).filter((t) => f['tag_' + t]), title: String(f.title || '').trim(), text: String(f.text).trim(), updated_at: now };
+    if (!rec) LIFE.journal.push(e); else Object.assign(rec, e); await LF.put('journal', e); sheet = null; editId = null; brainView = 'journal'; if (tab !== 'brain') tab = 'brain'; render(); return toast(rec ? 'Entry updated.' : 'Saved to your private journal.'); }
+  if (k === 'goal') { if (!String(f.title || '').trim()) return toast('Please name the goal.'); const tgt = f.target ? Number(String(f.target).replace(',', '.')) : null; if (f.target && !(tgt > 0)) return toast('Target must be a number above zero, or empty.');
+    const g = { ...(rec || { id: L.uid(), created_at: now, done: false }), title: f.title.trim(), horizon: f.horizon, area: f.area, target: tgt, unit: String(f.unit || '').trim() };
+    if (!rec) LIFE.goals.push(g); else Object.assign(rec, g); await LF.put('goals', g); sheet = null; editId = null; render(); return toast(rec ? 'Goal updated.' : 'Goal added.'); }
+  if (k === 'glog') { const v = Number(String(f.value || '').replace(',', '.')); if (!(v > 0)) return toast('Enter an amount above zero.'); const at = f.date && f.date !== LF.todayISO() ? new Date(f.date + 'T12:00:00').getTime() : now;
+    const p = { id: L.uid(), goal: logGoal, value: v, note: String(f.note || '').trim(), at }; LIFE.progress.push(p); await LF.put('progress', p); sheet = null; render(); return toast('Progress logged.'); }
+}
+
 // ---- start ----
 (async () => {
   const saved = await kvGet('state'); if (saved) { const v = L.validateBackup(saved); if (v.ok) S = v.state; else { await kvSet('corrupt-' + Date.now(), saved); toast('Saved data could not be read; a copy was kept. Restore a backup in Settings.', { alert: true, ms: 9000 }); } }
   hasPrev = !!(await kvGet('prev'));
   normSettings(); navigator.storage?.persist?.().catch(() => {});
   auth = await kvGet('auth'); await setLogo(await kvGet('logo'), false);
+  try { LIFE = await LF.loadAll(); if (S.mem.length && !LIFE.memories.length) { for (const m of S.mem) await LF.put('memories', m); LIFE.memories = await LF.loadAll().then((l) => l.memories); } LIFE.memories.sort((a, b) => (b.created_at || 0) - (a.created_at || 0)); S.mem = LIFE.memories; LIFE_READY = true; }
+  catch (e) { toast('Personal record storage is unavailable in this browser: journal and goals cannot be saved.', { alert: true, ms: 8000 }); }
   let lastState = ''; AI.onAi((a) => { if (a.state === 'ready' && lastState !== 'ready') setTimeout(warmChat, 50); lastState = a.state; ensureTicker(); paintEngine(); if (sheet === 'chat') paintChat(); paintOrbs(); });
   const vv = window.visualViewport; if (vv) { const u = () => { document.documentElement.style.setProperty('--vvh', vv.height + 'px'); document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px'); }; vv.addEventListener('resize', u); vv.addEventListener('scroll', u); u(); }
   banner(); render(true);
   document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!locked && hiddenAt && Date.now() - hiddenAt > AUTOLOCK_MS) return lockNow(); if (!locked) { checkReminders(); if (tab === 'home' && !sheet) render(); } });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  window.__anna = { get S() { return S; }, get locked() { return locked; }, AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
+  window.__anna = { get S() { return S; }, get locked() { return locked; }, get life() { return LIFE; }, offer: (t) => { offerRemember(t); paintChat(true); }, buildCtx: (q) => AI.buildContext(S, S.settings.ai, Date.now(), q, aiLife()), AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
 })();
