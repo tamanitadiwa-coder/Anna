@@ -65,7 +65,8 @@ const logo = '<svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="
 // ---- shared pieces ----
 const orb = (size = '', live = true) => `<span class="orb ${size}" ${live ? 'data-live' : ''} data-s="${orbState()}" aria-hidden="true"></span>`;
 const brandLogo = (cls = 'ulogo') => (logoUrl ? `<img class="${cls}" src="${logoUrl}" alt="Anna logo">` : cls === 'ulogo' ? orb('xs') : `<div class="${cls}">${logo}</div>`);
-const top = () => `<div class="top"><div class="brand">${brandLogo()}ANNA</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
+const backBtn = () => `<button class="back" data-act="back" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>`;
+const top = () => `<div class="top"><div class="brand">${backBtn()}${brandLogo()}ANNA</div><button class="ib" data-tab="data" aria-label="Settings">${ic('gear')}</button></div>`;
 const title = (eye, t, sub) => `<div><div class="eyebrow">${eye}</div><h1>${t}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 const sh = (t, link = '') => `<div class="sh"><h2>${t}</h2>${link}</div>`;
 const more = (tb, txt = 'See all') => `<button class="link" data-tab="${tb}">${txt}</button>`;
@@ -182,7 +183,7 @@ const screens = {
     const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
     const curOpts = [['R', 'R — South African rand'], ['$', '$ — US dollar'], ['€', '€ — euro'], ['£', '£ — pound']];
     const isCustom = !curOpts.some(([k]) => k === cur());
-    return `<div class="top"><div class="brand">${brandLogo()}Settings</div><button class="ib" data-tab="home" aria-label="Close settings">${ic('x')}</button></div>` + title('Your data', 'Data & settings', 'Everything stays on this device.') +
+    return `<div class="top"><div class="brand">${backBtn()}${brandLogo()}Settings</div><button class="ib" data-tab="home" aria-label="Close settings">${ic('x')}</button></div>` + title('Your data', 'Data & settings', 'Everything stays on this device.') +
       `<div class="card"><h2>Owner & security</h2><div class="status"><b>Original owner</b><span>${esc(A.OWNER.name)}</span><b>Password</b><span>Set ${auth ? new Date(auth.changed_at).toLocaleDateString('en-ZA') : ''} · stored only as a PBKDF2 hash</span><b>Auto-lock</b><span>after 5 minutes in the background</span></div>
         <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="lock">Lock now</button><button class="btn sage sm" data-act="open" data-id="chpw">Change password</button></div></div>
       <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
@@ -303,7 +304,15 @@ const FORMS = {
 FORMS.chpw = () => ['Change password', `${fld('Current password', '<input name="old" type="password" autocomplete="current-password" required>')}${fld('New password (at least 8 characters)', '<input name="pw" type="password" autocomplete="new-password" required>')}${fld('Repeat new password', '<input name="pw2" type="password" autocomplete="new-password" required>')}<div class="mute">Backups made before the change still open with the old password.</div>`, 'Change password'];
 const KEY = { task: 'tasks', reminder: 'reminders', tx: 'tx', bill: 'bills', budget: 'budgets', biz: 'biz', mem: 'mem' };
 const NAME = { task: 'Task', reminder: 'Reminder', tx: 'Entry', bill: 'Bill', budget: 'Budget', biz: 'Record', mem: 'Memory' };
+let navStack = [], lastTab = null, goingBack = false;
+function goBack() {
+  if (locked) { if (welcomed) { welcomed = false; lockMsg = ''; render(true); } return; }
+  if (sheet) return actions.close();
+  if (navStack.length) { goingBack = true; tab = navStack.pop(); render(true); scrollTo(0, 0); return; }
+  lockNow();
+}
 function render(anim) {
+  if (!locked) { if (lastTab && tab !== lastTab && !goingBack) { navStack.push(lastTab); if (navStack.length > 30) navStack.shift(); } lastTab = tab; goingBack = false; }
   if (locked) { $('#screen').innerHTML = lockScreen(); $('#tabs').innerHTML = ''; $('#sheet').innerHTML = (sheet === 'chpw' ? '' : ''); document.body.classList.remove('lock'); return; }
   const now = new Date(); SOD = new Date(now).setHours(0, 0, 0, 0); EOD = SOD + 864e5;
   const el = $('#screen'), y = scrollY; el.innerHTML = screens[tab]();
@@ -407,6 +416,7 @@ const actions = {
   notif: async () => { try { const p = await Notification.requestPermission(); render(); if (p === 'granted') notify('Anna', 'Reminder alerts are on.'); } catch { toast('This browser cannot show notifications. Open Anna from the Home Screen icon.'); } },
   'notif-test': async () => { const ok = await notify('Anna', 'This is how reminders will look.'); toast(ok ? 'Test alert sent.' : 'Could not show a notification.'); },
   lock: () => lockNow(),
+  back: () => goBack(),
   'logo-pick': () => $('#logofile').click(),
   'logo-reset': async () => { await setLogo(null); render(); toast('Default logo restored.'); },
   'reset-anna': async () => { if (prompt('This deletes ALL Anna data, your password and logo on this device. Your encrypted backups still need the old password. Type ERASE to continue.') !== 'ERASE') return; for (const k of ['state', 'prev', 'auth', 'logo']) await kvSet(k, null); try { localStorage.removeItem('anna-web:fails'); } catch {} location.reload(); },
@@ -422,6 +432,10 @@ document.addEventListener('input', (e) => {
   if (e.target.id === 'bq') { bizQ = e.target.value; $('#bizlist').innerHTML = bizList(); }
   if (e.target.matches('.chatin textarea')) { e.target.style.height = 'auto'; e.target.style.height = Math.min(120, e.target.scrollHeight) + 'px'; }
 });
+// Swipe from the left edge to go back (iPhone Home Screen apps have no browser back gesture).
+let swipe = null;
+document.addEventListener('touchstart', (e) => { const t = e.touches[0]; swipe = t && t.clientX < 24 && !(locked && !welcomed) ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
+document.addEventListener('touchend', (e) => { if (!swipe) return; const t = e.changedTouches[0], dx = t.clientX - swipe.x, dy = Math.abs(t.clientY - swipe.y); swipe = null; if (dx > 70 && dy < 60) goBack(); }, { passive: true });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && e.target.matches('.chatin textarea') && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); e.target.form.requestSubmit(); } if (e.key === 'Escape' && sheet) actions.close(); });
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'cursel') { $('#curwrap').hidden = e.target.value !== 'custom'; return; }
@@ -467,7 +481,7 @@ let welcomed = false;
 const lockIc = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 function lockScreen() {
   if (!welcomed) return `<div class="welcome"><div class="aname">ANNA</div>${orb('', false).replace('data-s="off"', 'data-s="rest"')}<div class="hey">Hey, ${esc(ownerFirst())}.</div><div class="tagline">Your space. Your thoughts. Your ANNA.</div><button class="btn" data-act="meet">Meet ANNA</button></div><div class="powered">POWERED BY TAMANY.TECH</div>`;
-  const msg = lockMsg ? `<div class="warn">${esc(lockMsg)}</div>` : '', head = `<div class="access">${logoUrl ? brandLogo('biglogo') : orb('sm', false).replace('data-s="off"', 'data-s="rest"')}<div class="aname">ANNA</div>`;
+  const msg = lockMsg ? `<div class="warn">${esc(lockMsg)}</div>` : '', head = `${backBtn().replace('class="back"', 'class="back fixed"')}<div class="access">${logoUrl ? brandLogo('biglogo') : orb('sm', false).replace('data-s="off"', 'data-s="rest"')}<div class="aname">ANNA</div>`;
   const priv = `<div class="privacy">${lockIc}Private to ${esc(A.OWNER.name)} · stays on this device</div>`;
   if (!auth) return head + `<div class="lockv" style="min-height:0;gap:0;padding:0;width:100%"><div class="tagline" style="margin:0 0 18px">Create your password.</div>${msg}
     <form data-form="setup" novalidate><input name="pw" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" aria-label="New password" required><input name="pw2" type="password" placeholder="Repeat password" autocomplete="new-password" aria-label="Repeat password" required style="margin-top:10px"><button class="btn">Create password</button></form>${priv}
@@ -483,7 +497,7 @@ async function unlocked(pw) {
   render(true);
   if (!started) { started = true; await save(); AI.refresh(); checkReminders(); setInterval(() => { if (!locked) checkReminders(); }, 15000); }
 }
-function lockNow() { welcomed = true; locked = true; bkKey = null; sheet = null; editId = null; pendingRestore = null; diag = ''; render(true); }
+function lockNow() { navStack = []; lastTab = null; welcomed = true; locked = true; bkKey = null; sheet = null; editId = null; pendingRestore = null; diag = ''; render(true); }
 async function setLogo(url, persist = true) {
   logoUrl = url || null; if (persist) await kvSet('logo', logoUrl);
   for (const [rel, def] of [['apple-touch-icon', 'icons/apple-touch-icon.png'], ['icon', 'icons/icon-192.png']]) { const l = document.querySelector(`link[rel="${rel}"]`); if (l) l.href = logoUrl || def; }
