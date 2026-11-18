@@ -255,13 +255,14 @@ let chatKey = '';
 const paintChat = (force) => { const m = $('#chatmain'); if (!m) return; const a = AI.ai, key = a.state + a.busy + a.error;
   if (!force && key !== chatKey) { chatKey = key; const ta = $('.chatin textarea'), v = ta?.value, foc = document.activeElement === ta; $('#sheet').innerHTML = chatPanel(); const t2 = $('.chatin textarea'); if (t2) { t2.value = v || ''; if (foc) t2.focus(); } }
   const mm = $('#chatmain'), o = $('#msgs'), near = !o || o.scrollHeight - o.scrollTop - o.clientHeight < 120; mm.innerHTML = chatMain(); const x = $('#msgs'); if (x && near) mm.scrollTop = mm.scrollHeight; };
+const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.buildMessages(AI.buildContext(S, S.settings.ai, Date.now(), ''), S.chat, '', cur()).slice(0, -1)); };
 async function sendChat(text) {
   text = text.trim(); if (!text || AI.ai.state !== 'ready' || AI.ai.busy) return;
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); paintChat(true); save();
   try {
     const ctx = AI.buildContext(S, S.settings.ai, Date.now(), text);
     await AI.ask(AI.buildMessages(ctx, hist, text, cur()), (t) => { a.content = t; paintChat(true); });
-    a.content = a.content.trim(); if (!a.content) a.content = '(Anna produced no answer. Try rephrasing.)';
+    a.content = a.content.trim().replace(/^[.,:;]+(?=\s*\S)/, '').trim(); if (!a.content) a.content = '(Anna produced no answer. Try rephrasing.)';
   } catch (e) { a.content = ''; a.error = AI.friendly(e); }
   a.at = Date.now(); paintChat(); await save();
 }
@@ -351,7 +352,7 @@ const actions = {
     toast(`${NAME[k]} deleted`, { ms: 6000, action: { label: 'Undo', fn: () => { if (!undo) return; const u = undo; undo = null; mutate(() => { S[u.key].splice(Math.min(u.i, S[u.key].length), 0, u.item); }, { close: false }); } } }); },
   edit: (id, el) => { sheet = el.dataset.k; editId = id; render(); },
   view: (id) => { tab = 'tasks'; taskView = id; sheet = null; render(true); },
-  'chat-open': () => { sheet = 'chat'; render(); AI.refresh(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
+  'chat-open': () => { sheet = 'chat'; render(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
   'chat-clear': () => { if (!S.chat.length || confirm('Clear the whole conversation? This cannot be undone (it is also removed from future backups).')) { S.chat = []; save(); paintChat(true); } },
   'chat-stop': () => AI.stop(),
   'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); scrollTo(0, 0); },
@@ -426,7 +427,7 @@ document.addEventListener('submit', (e) => {
   const saved = await kvGet('state'); if (saved) { const v = L.validateBackup(saved); if (v.ok) S = v.state; else { await kvSet('corrupt-' + Date.now(), saved); toast('Saved data could not be read; a copy was kept. Restore a backup in Settings.', { alert: true, ms: 9000 }); } }
   hasPrev = !!(await kvGet('prev'));
   normSettings(); navigator.storage?.persist?.().catch(() => {});
-  AI.onAi(() => { paintEngine(); if (sheet === 'chat') paintChat(); if (tab === 'home' && !sheet) { const p = document.querySelector('.ask .chip'); if (p) p.outerHTML = aiPill(); } });
+  let lastState = ''; AI.onAi((a) => { if (a.state === 'ready' && lastState !== 'ready') setTimeout(warmChat, 50); lastState = a.state; paintEngine(); if (sheet === 'chat') paintChat(); if (tab === 'home' && !sheet) { const p = document.querySelector('.ask .chip'); if (p) p.outerHTML = aiPill(); } });
   const vv = window.visualViewport; if (vv) { const u = () => { document.documentElement.style.setProperty('--vvh', vv.height + 'px'); document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px'); }; vv.addEventListener('resize', u); vv.addEventListener('scroll', u); u(); }
   banner(); render(true); await save();
   AI.refresh();
