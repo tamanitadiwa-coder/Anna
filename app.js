@@ -308,15 +308,15 @@ let navStack = [], lastTab = null, goingBack = false;
 function goBack() {
   if (locked) { if (welcomed) { welcomed = false; lockMsg = ''; render(true); } return; }
   if (sheet) return actions.close();
-  if (navStack.length) { goingBack = true; tab = navStack.pop(); render(true); scrollTo(0, 0); return; }
+  if (navStack.length) { goingBack = true; tab = navStack.pop(); render(true); ($('#screen').scrollTop = 0); return; }
   lockNow();
 }
 function render(anim) {
   if (!locked) { if (lastTab && tab !== lastTab && !goingBack) { navStack.push(lastTab); if (navStack.length > 30) navStack.shift(); } lastTab = tab; goingBack = false; }
   if (locked) { $('#screen').innerHTML = lockScreen(); $('#tabs').innerHTML = ''; $('#sheet').innerHTML = (sheet === 'chpw' ? '' : ''); document.body.classList.remove('lock'); return; }
   const now = new Date(); SOD = new Date(now).setHours(0, 0, 0, 0); EOD = SOD + 864e5;
-  const el = $('#screen'), y = scrollY; el.innerHTML = screens[tab]();
-  if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); } else scrollTo(0, y);
+  const el = $('#screen'), y = el.scrollTop; el.innerHTML = screens[tab]();
+  if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); el.scrollTop = 0; } else el.scrollTop = y;
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}" aria-label="${n}" ${k === tab ? 'aria-current="page"' : ''}>${ic(k)}${n}</button>`).join('');
   const rec = editId ? S[KEY[sheet]]?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec);
   const special = sheet === 'chat' ? chatPanel() : sheet === 'ctx' ? ctxPanel() : sheet === 'restore' ? restorePanel() : '';
@@ -386,7 +386,7 @@ const actions = {
   'chat-open': () => { sheet = 'chat'; render(); paintOrbs(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
   'chat-clear': () => { if (!S.chat.length || confirm('Clear the whole conversation? This cannot be undone (it is also removed from future backups).')) { S.chat = []; save(); paintChat(true); } },
   'chat-stop': () => AI.stop(),
-  'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); scrollTo(0, 0); },
+  'chat-suggest': (i) => sendChat(SUGG[i]), 'chat-to-brain': () => { sheet = null; tab = 'brain'; render(true); ($('#screen').scrollTop = 0); },
   'ai-download': () => { if (!navigator.onLine) return toast('You are offline. Connect to Wi-Fi to download the model.'); AI.download(); },
   'ai-cancel': () => AI.cancelDownload(), 'ai-cancel-load': () => AI.cancelLoad(),
   awake: () => { const st = AI.ai.state; if (st === 'ready') return AI.unload(); if (st === 'loading') return AI.cancelLoad(); if (st === 'cached') return AI.load({ gpu: S.settings.ai.gpu }); if (st === 'absent') { tab = 'brain'; render(true); return toast('Download ANNA’s brain first (one-time, Wi-Fi recommended).', { ms: 5000 }); } if (st === 'unsupported') return toast(AI.ai.error || 'AI brain not available on this device.', { ms: 6000 }); toast('Please wait a moment…'); },
@@ -425,13 +425,16 @@ const actions = {
 };
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-tab],[data-act]'); if (!t) return;
-  if (t.dataset.tab) { if (t.dataset.tab !== tab || sheet) { tab = t.dataset.tab; sheet = null; editId = null; render(true); scrollTo(0, 0); } } else actions[t.dataset.act]?.(t.dataset.id, t);
+  if (t.dataset.tab) { if (t.dataset.tab !== tab || sheet) { tab = t.dataset.tab; sheet = null; editId = null; render(true); ($('#screen').scrollTop = 0); } } else actions[t.dataset.act]?.(t.dataset.id, t);
 });
 document.addEventListener('input', (e) => {
   if (e.target.id === 'q') { memQ = e.target.value; $('#memlist').innerHTML = memList(); }
   if (e.target.id === 'bq') { bizQ = e.target.value; $('#bizlist').innerHTML = bizList(); }
   if (e.target.matches('.chatin textarea')) { e.target.style.height = 'auto'; e.target.style.height = Math.min(120, e.target.scrollHeight) + 'px'; }
 });
+// No pinch zoom (Safari ignores user-scalable=no); double-tap zoom is off via touch-action.
+['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 // Swipe from the left edge to go back (iPhone Home Screen apps have no browser back gesture).
 let swipe = null;
 document.addEventListener('touchstart', (e) => { const t = e.touches[0]; swipe = t && t.clientX < 24 && !(locked && !welcomed) ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
