@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ANNA AI test</title><meta name="color-scheme" content="dark">
+<style>
+body{margin:0;background:#000;color:#EAF7FF;font:16px/1.45 -apple-system,system-ui,sans-serif;padding:16px;max-width:640px;margin:0 auto}
+h1{font-weight:300;letter-spacing:.3em;font-size:20px;color:#A9DFFF}
+button{display:block;width:100%;margin:8px 0;padding:14px;border-radius:999px;border:1px solid rgba(169,223,255,.4);background:#080D18;color:#EAF7FF;font:inherit}
+button:disabled{opacity:.4}
+#info,#status{font-size:13px;color:#8FA6BC;white-space:pre-wrap;word-break:break-word}
+#err{color:#FF9C8F;white-space:pre-wrap;word-break:break-word;font-size:14px}
+.bar{height:8px;background:#0D1526;border-radius:8px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;width:0;background:#75CFFF}
+#chat{display:none}textarea{width:100%;box-sizing:border-box;min-height:70px;background:#04070D;color:#EAF7FF;border:1px solid rgba(169,223,255,.3);border-radius:14px;padding:10px;font:inherit}
+.msg{padding:10px 12px;border-radius:14px;margin:8px 0;background:#080D18;white-space:pre-wrap}.msg.u{background:#12324d}
+</style></head><body>
+<h1>ANNA · AI TEST</h1>
+<div id="info"></div>
+<button data-e="webllm" data-m="Qwen2.5-0.5B-Instruct">WebLLM Qwen 0.5B</button>
+<button data-e="webllm" data-m="SmolLM2-360M-Instruct">WebLLM SmolLM2 360M</button>
+<button data-e="wllama">wllama current Qwen (cached)</button>
+<button data-e="tfjs">Transformers.js SmolLM2 360M WASM</button>
+<div id="status">Pick one engine. Reload the page before trying another (frees memory).</div>
+<div class="bar"><i id="bar"></i></div>
+<div id="err"></div>
+<div id="chat"><div id="log"></div><textarea id="q" placeholder="Ask something…"></textarea><button id="send">Send</button></div>
+<script type="module">
+const $ = (s) => document.querySelector(s), t0 = performance.now();
+const status = (s, p) => { $('#status').textContent = s + ` · ${((performance.now() - start) / 1000).toFixed(0)}s`; if (p != null) $('#bar').style.width = Math.round(p * 100) + '%'; };
+const fail = (e) => { $('#err').textContent = 'ERROR: ' + (e?.message || e) + (e?.stack ? '\n' + e.stack.split('\n').slice(0, 4).join('\n') : ''); };
+window.addEventListener('error', (e) => fail(e.error || e.message)); window.addEventListener('unhandledrejection', (e) => fail(e.reason));
+let start = performance.now(), ask = null;
+(async () => { const gpu = !!navigator.gpu; let a = null; try { a = gpu ? await navigator.gpu.requestAdapter() : null; } catch {}
+  const est = await navigator.storage?.estimate?.().catch(() => null); try { await navigator.storage?.persist?.(); } catch {}
+  $('#info').textContent = `WebGPU: ${a ? 'yes' + (a.features.has('shader-f16') ? ' (f16)' : ' (no f16)') : 'no'} · storage ${est ? Math.round(est.usage / 1e6) + '/' + Math.round(est.quota / 1e6) + ' MB' : '?'}\n${navigator.userAgent}`; window.__f16 = !!a?.features.has('shader-f16'); })();
+const ENGINES = {
+  async webllm(model) {
+    if (!navigator.gpu) throw new Error('WebGPU is not available in this browser, so WebLLM cannot run here.');
+    const id = `${model}-${window.__f16 ? 'q4f16_1' : 'q4f32_1'}-MLC`; status('Loading WebLLM library…');
+    const webllm = await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/+esm');
+    const eng = await webllm.CreateMLCEngine(id, { initProgressCallback: (r) => status(`${id}: ${r.text}`, r.progress) });
+    return async (q, on) => { let out = ''; const s = await eng.chat.completions.create({ messages: [{ role: 'user', content: q }], stream: true, max_tokens: 200 }); for await (const c of s) { out += c.choices[0]?.delta?.content || ''; on(out); } return out; };
+  },
+  async wllama() {
+    const URL_ = 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/41ba88dbac95fed2528c92514c131d73eb5a174b/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf';
+    const abs = (p) => new URL(p, location.href).href; const mod = await import(abs('../vendor/wllama/index.js'));
+    const w = new mod.Wllama({ default: abs('../vendor/wllama/wllama.wasm') }, { allowOffline: true, logger: { debug() {}, log: (m) => { const s = String(m); if (/load_tensors|llama_context|sched_reserve|model_loader/.test(s)) status('wllama: ' + s.slice(0, 80)); }, warn: console.warn, error: console.error } });
+    w.setCompat({ wasm: abs('../vendor/wllama-compat/wllama.wasm'), worker: abs('../vendor/wllama-compat/wllama.js') });
+    let blob = await w.cacheManager.open(URL_);
+    if (!blob) { status('Not cached yet: downloading 398 MB…', 0); await w.cacheManager.download(URL_, { progressCallback: ({ loaded, total }) => status(`Downloading ${Math.round(loaded / 1e6)}/${Math.round(total / 1e6)} MB`, loaded / total) }); blob = await w.cacheManager.open(URL_); }
+    status('Loading cached model into memory…', 1); await w.loadModel([blob], { n_ctx: 1536, n_batch: 128, n_gpu_layers: 0 });
+    return async (q, on) => { let out = ''; const s = await w.createChatCompletion({ messages: [{ role: 'user', content: q }], max_tokens: 200, stream: true }); for await (const c of s) { out += c.choices[0]?.delta?.content || ''; on(out); } return out; };
+  },
+  async tfjs() {
+    const T = await import('./tf/transformers.bundle.mjs');
+    T.env.allowRemoteModels = true; T.env.allowLocalModels = false; T.env.useBrowserCache = true;
+    T.env.backends.onnx.wasm.wasmPaths = new URL('./tf/', location.href).href; T.env.backends.onnx.wasm.numThreads = 1; T.env.backends.onnx.wasm.proxy = false;
+    const files = {}; const gen = await T.pipeline('text-generation', 'HuggingFaceTB/SmolLM2-360M-Instruct', { dtype: 'q4', device: 'wasm', revision: 'a10cc1512eabd3dde888204e902eca88bddb4951',
+      progress_callback: (p) => { if (p.file && p.total) { files[p.file] = [p.loaded, p.total]; const l = Object.values(files).reduce((n, x) => n + x[0], 0), t = Object.values(files).reduce((n, x) => n + x[1], 0); status(`Downloading/loading ${p.file} · ${Math.round(l / 1e6)}/${Math.round(t / 1e6)} MB`, l / t); } else if (p.status) status('Transformers.js: ' + p.status + ' ' + (p.file || '')); } });
+    return async (q, on) => { const out = await gen([{ role: 'user', content: q }], { max_new_tokens: 200, do_sample: false }); const txt = out[0].generated_text.at(-1).content; on(txt); return txt; };
+  },
+};
+document.querySelectorAll('button[data-e]').forEach((b) => b.onclick = async () => {
+  document.querySelectorAll('button[data-e]').forEach((x) => x.disabled = true); $('#err').textContent = ''; start = performance.now();
+  try { ask = await ENGINES[b.dataset.e](b.dataset.m); status(`Ready: ${b.textContent} (loaded in ${((performance.now() - start) / 1000).toFixed(0)}s). Turn on Airplane Mode and ask.`, 1); $('#chat').style.display = 'block'; }
+  catch (e) { fail(e); status('Failed: ' + b.textContent); }
+});
+$('#send').onclick = async () => { const q = $('#q').value.trim(); if (!q || !ask) return; $('#q').value = ''; const u = document.createElement('div'); u.className = 'msg u'; u.textContent = q; const a = document.createElement('div'); a.className = 'msg'; a.textContent = '…'; $('#log').append(u, a);
+  const s = performance.now(); $('#send').disabled = true; try { await ask(q, (t) => a.textContent = t); a.textContent += `\n(${((performance.now() - s) / 1000).toFixed(1)}s, ${navigator.onLine ? 'online' : 'OFFLINE'})`; } catch (e) { a.textContent = 'ERROR'; fail(e); } $('#send').disabled = false; };
+</script></body></html>
