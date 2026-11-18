@@ -4,7 +4,8 @@ import * as L from './logic.js';
 import * as AI from './ai.js';
 import * as A from './auth.js';
 import * as LF from './life.js';
-export const VERSION = '0.7.0';
+import * as TM from './time.js';
+export const VERSION = '0.8.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -24,6 +25,7 @@ async function kvSet(k, v) {
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
 let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
+let pendingReminder = null, reminderPrefill = null, lastURL = '';
 let LIFE = LF.emptyLife(), brainView = 'journal', jQ = '', jTag = '', pendingRemember = null, checkinShown = false;
 let S = L.emptyState(), tab = 'home', sheet = null, editId = null, taskView = 'today', memCat = 'All', memQ = '', bizQ = '', saveErr = '', SOD = 0, EOD = 0, diag = '', pendingRestore = null, hasPrev = false, undo = null;
 const save = async () => { try { S.chat = S.chat.slice(-300); await kvSet('state', { ...S, mem: [] }); await syncMem(); saveErr = ''; } catch (e) { saveErr = String(e); } };
@@ -85,10 +87,11 @@ const ckBtn = (act, id, on, label) => `<button class="ck ${on ? 'on' : ''}" data
 const taskCard = (t) => `<div class="tcard ${t.priority}">${ckBtn('toggle', t.id, t.completed, t.completed ? 'Mark not done' : 'Mark done')}
   <div class="grow" data-act="edit" data-k="task" data-id="${t.id}"><div class="${t.completed ? 'done' : ''}">${esc(t.title)}</div><div>${t.priority === 'high' ? '<span class="chip gold">High priority</span>' : ''}${t.completed ? '' : dueChip(t)}${t.notes ? '<span class="chip">Note</span>' : ''}</div></div>${delBtn('task', t.id)}</div>`;
 const repLabel = (r) => (L.REPEATS.find(([k]) => k === r.repeat) || [])[1];
+const whereLives = (r) => ['Saved in ANNA', r.dest?.iphone ? 'sent to iPhone Reminders' : '', r.dest?.ics ? 'Calendar file made' : ''].filter(Boolean).join(' · ');
 const remCard = (r) => { const late = !r.done && r.at < Date.now();
   return `<div class="tcard ${late ? 'high' : ''}">${ckBtn('rem-done', r.id, r.done, r.done ? 'Mark not done' : r.repeat && r.repeat !== 'none' ? 'Done, schedule next' : 'Mark done')}
-  <div class="grow" data-act="edit" data-k="reminder" data-id="${r.id}"><div class="${r.done ? 'done' : ''}">${esc(r.title)}</div><div><span class="chip ${late ? 'bad' : 'gold'}">${ic('bell').replace('class="i"', 'class="i" style="width:12px;height:12px;vertical-align:-1px"')} ${late ? 'Due · ' : ''}${dtstr(r.at)}</span>${r.repeat && r.repeat !== 'none' ? `<span class="chip">${esc(repLabel(r))}</span>` : ''}</div></div>
-  ${r.done ? '' : `<button class="edit" data-act="rem-ics" data-id="${r.id}" aria-label="Add to iPhone Calendar">${ic('cal')}</button>`}${delBtn('reminder', r.id)}</div>`; };
+  <div class="grow" data-act="edit" data-k="reminder" data-id="${r.id}"><div class="${r.done ? 'done' : ''}">${esc(r.title)}</div><div><span class="chip ${late ? 'bad' : 'gold'}">${ic('bell').replace('class="i"', 'class="i" style="width:12px;height:12px;vertical-align:-1px"')} ${late ? 'Due · ' : ''}${dtstr(r.at)}</span>${r.repeat && r.repeat !== 'none' ? `<span class="chip">${esc(repLabel(r))}</span>` : ''}</div><div class="mute" style="font-size:12px;margin-top:2px">${whereLives(r)}</div></div>
+  ${r.done ? '' : `<button class="edit" data-act="rem-ios" data-id="${r.id}" aria-label="Send to iPhone Reminders">${ic('check')}</button><button class="edit" data-act="rem-ics" data-id="${r.id}" aria-label="Add to Calendar">${ic('cal')}</button>`}${delBtn('reminder', r.id)}</div>`; };
 const bizRow = (r) => `<div class="item"><div class="dot ${r.kind === 'expense' ? 'g' : ''}">${ic(r.kind === 'expense' ? 'money' : 'biz')}</div><div class="grow tap" data-act="edit" data-k="biz" data-id="${r.id}"><b>${esc(r.description)}</b><div class="mute">${r.kind}${r.kind === 'invoice' ? ' · ' + r.status : ''}${r.party ? ' · ' + esc(r.party) : ''} · ${dstr(r.occurred_at)}</div></div><b>${money(r.amount_cents)}</b>${delBtn('biz', r.id)}</div>`;
 function activity() { const a = [];
   S.tasks.forEach((t) => { a.push({ t: t.created_at || 0, i: 'tasks', x: `Added task “${esc(t.title)}”` }); if (t.completed_at) a.push({ t: t.completed_at, i: 'check', x: `Completed “${esc(t.title)}”` }); });
@@ -248,7 +251,8 @@ function engineHTML() {
 }
 const accessHTML = () => `<div class="card"><h2>What Anna may read</h2><div class="mute" style="margin:4px 0 4px">Only switched-on categories are shown to the local model, and nothing ever leaves this device. Notes and customer names are never included, and Anna can read but never change your data.</div>${AI.ACCESS.map(([k, n]) => sw(k, n)).join('')}<button class="link" data-act="ctx-open">Preview exactly what Anna sees</button></div>`;
 const SUGG = ['What should I focus on today?', 'How am I doing on money this month?', 'Which bills and invoices are unpaid?', 'Give me three tips to save on groceries.'];
-const bubble = (m, i) => `<div class="bub ${m.role}${m.error ? ' err' : ''}">${m.error ? esc(m.error) : m.content ? esc(m.content).replace(/\n/g, '<br>') : '<span class="mute typing">Thinking</span>'}${m.at ? `<span class="t">${tstr(m.at)}</span>` : ''}</div>`;
+const followBtns = (m) => { const r = m.follow && S.reminders.find((x) => x.id === m.follow); return r && !r.done ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="rem-ios" data-id="${r.id}">iPhone Reminders</button><button class="btn sm sage" data-act="rem-ics" data-id="${r.id}">Add to Calendar</button></div><div class="mute" style="font-size:12px;margin-top:4px">${whereLives(r)}</div>` : ''; };
+const bubble = (m, i) => `<div class="bub ${m.role}${m.error ? ' err' : ''}">${m.error ? esc(m.error) : m.content ? esc(m.content).replace(/\n/g, '<br>') : '<span class="mute typing">Thinking</span>'}${m.follow ? followBtns(m) : ''}${m.at ? `<span class="t">${tstr(m.at)}</span>` : ''}</div>`;
 function chatMain() {
   const a = AI.ai, ready = a.state === 'ready';
   let note = '';
@@ -258,13 +262,14 @@ function chatMain() {
   }
   const sugg = ready && !S.chat.length ? `<div class="empty">Ask about your day, money or business, or anything else.<br>Anna only sees what you allow in Brain.</div>${SUGG.map((q, i) => `<button class="btn sage full" style="margin:6px 0" data-act="chat-suggest" data-id="${i}">${q}</button>`).join('')}` : '';
   const rem = pendingRemember ? `<div class="card" style="margin:4px 0"><div>${pendingRemember.style ? `Want me to remember that you prefer: <b>${esc(LF.STYLES.find(([k]) => k === pendingRemember.style)[1])}</b>?` : `Want me to remember this?<div class="mute" style="margin-top:4px">“${esc(pendingRemember.text.slice(0, 160))}”</div>`}</div><div class="row" style="margin-top:10px"><button class="btn sm" data-act="rem-yes">Yes, remember</button><button class="btn sm sage" data-act="rem-no">No</button></div></div>` : '';
-  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}</div>`;
+  const rq = pendingReminder?.ts ? `<div class="card" style="margin:4px 0"><div class="row wrap"><button class="btn sm" data-act="rq-save">Save in ANNA</button><button class="btn sm sage" data-act="rq-edit">Change…</button><button class="btn sm sage" data-act="rq-cancel">Cancel</button></div></div>` : '';
+  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}${rq}</div>`;
 }
 function chatPanel() {
   const on = AI.ACCESS.filter(([k]) => S.settings.ai[k]).map(([, n]) => n), busy = AI.ai.busy;
   return `<div class="pn chat" role="dialog" aria-label="Ask Anna"><div class="row" style="margin-bottom:8px"><div class="grow"><div class="row" style="gap:10px">${orb('md')}<h2>ANNA</h2></div><div class="mute">${on.length ? 'Can read: ' + on.join(', ') : 'Can read nothing yet'} · <button class="link" style="min-height:0;padding:0" data-act="ctx-open">what’s shared</button></div></div><button class="ib" data-act="chat-clear" aria-label="Clear conversation">${ic('trash')}</button><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
     <div id="chatmain" class="chatmain">${chatMain()}</div>
-    <form data-form="chat" class="chatin"><textarea name="msg" rows="1" placeholder="${AI.ai.state === 'ready' ? 'Ask Anna…' : 'Load the AI to ask a question'}" maxlength="800" required aria-label="Message"></textarea>${busy ? `<button type="button" class="btn sage" data-act="chat-stop" aria-label="Stop">${ic('stop')}</button>` : `<button class="btn" id="send" ${AI.ai.state === 'ready' ? '' : 'disabled'}>Send</button>`}</form></div>`;
+    <form data-form="chat" class="chatin"><textarea name="msg" rows="1" placeholder="${AI.ai.state === 'ready' ? 'Ask ANNA…' : 'Remind me…, times, dates (AI asleep)'}" maxlength="800" required aria-label="Message"></textarea>${busy ? `<button type="button" class="btn sage" data-act="chat-stop" aria-label="Stop">${ic('stop')}</button>` : `<button class="btn" id="send">Send</button>`}</form></div>`;
 }
 const ctxPanel = () => `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="What Anna sees"><div class="gr"></div><div class="row"><h2 class="grow">What Anna sees</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><div class="mute" style="margin:6px 0 10px">This is the complete data block given to the local model with each question (memories are picked by relevance to your question). It never leaves your device.</div><pre class="diag">${esc(AI.buildContext(S, S.settings.ai, Date.now(), '', aiLife()))}</pre></div>`;
 const restorePanel = () => { const r = pendingRestore; if (!r) return '';
@@ -283,8 +288,19 @@ const paintChat = (force) => { const m = $('#chatmain'); if (!m) return; const a
   if (!force && key !== chatKey) { chatKey = key; const ta = $('.chatin textarea'), v = ta?.value, foc = document.activeElement === ta; $('#sheet').innerHTML = chatPanel(); const t2 = $('.chatin textarea'); if (t2) { t2.value = v || ''; if (foc) t2.focus(); } }
   const mm = $('#chatmain'), o = $('#msgs'), near = !o || o.scrollHeight - o.scrollTop - o.clientHeight < 120; mm.innerHTML = chatMain(); const x = $('#msgs'); if (x && near) mm.scrollTop = mm.scrollHeight; };
 const warmChat = () => { if (AI.ai.state === 'ready' && !AI.ai.busy) AI.warm(AI.buildMessages(AI.buildContext(S, S.settings.ai, Date.now(), '', aiLife()), S.chat, '', cur()).slice(0, -1)); };
+// Tools first (exact answers from code, work without the AI): reminders, clock, dates, public holidays.
+function toolReply(text) {
+  if (pendingReminder && !pendingReminder.ts) { const w = TM.parseWhen(text); if (w?.hasDate || w?.hasTime) { pendingReminder = { ...pendingReminder, ts: w.ts, hasTime: w.hasTime, repeat: w.repeat !== 'none' ? w.repeat : pendingReminder.repeat }; return reminderAsk(); } }
+  const d = TM.parseReminder(text);
+  if (d) { pendingReminder = d; if (!d.title) { pendingReminder = null; return 'What should I remind you about? For example: “Remind me to call Mom tomorrow at 3pm”.'; } if (!d.ts) return `When should I remind you to “${d.title}”? For example: tomorrow at 9am, next Friday, or in 2 hours.`; if (d.ts <= Date.now()) { pendingReminder = { ...d, ts: null }; return 'That time has already passed. When should I remind you instead?'; } return reminderAsk(); }
+  const t = TM.answerTime(text); return t || '';
+}
+const reminderAsk = () => { const d = pendingReminder; return `Shall I remind you to “${d.title}” on ${TM.fmtDateTime(d.ts)}${d.repeat && d.repeat !== 'none' ? ', repeating ' + ({ daily: 'every day', weekly: 'every week', monthly: 'every month' }[d.repeat]) : ''}${d.hasTime === false ? ' (I picked 09:00, change it if you like)' : ''}?`; };
 async function sendChat(text, opts) {
-  text = text.trim(); if (!text || AI.ai.state !== 'ready' || AI.ai.busy) return;
+  text = text.trim(); if (!text || AI.ai.busy) return;
+  const tool = toolReply(text);
+  if (tool) { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: tool, at: Date.now(), tool: pendingReminder ? 'reminders' : 'clock' }); pendingRemember = null; paintChat(true); await save(); return; }
+  if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
     const ctx = AI.buildContext(S, S.settings.ai, Date.now(), text, aiLife());
@@ -329,7 +345,7 @@ function render(anim) {
   const el = $('#screen'), y = el.scrollTop; el.innerHTML = screens[tab]();
   if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); el.scrollTop = 0; } else el.scrollTop = y;
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}" aria-label="${n}" ${k === tab ? 'aria-current="page"' : ''}>${ic(k)}${n}</button>`).join('');
-  const rec = editId ? (LIFEKEY[sheet] ? LIFE[LIFEKEY[sheet]] : S[KEY[sheet]])?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec);
+  const rec = editId ? (LIFEKEY[sheet] ? LIFE[LIFEKEY[sheet]] : S[KEY[sheet]])?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec || (sheet === 'reminder' && reminderPrefill ? reminderPrefill : undefined));
   const special = sheet === 'chat' ? chatPanel() : sheet === 'ctx' ? ctxPanel() : sheet === 'restore' ? restorePanel() : '';
   $('#sheet').innerHTML = special ? special : f ? `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="${f[0]}"><div class="gr"></div><div class="row"><h2 class="grow">${f[0]}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><form data-form="${sheet}" novalidate>${f[1]}<button class="btn full" style="margin-top:14px">${f[2]}</button>${rec ? `<button type="button" class="btn bad full" style="margin-top:8px" data-act="${LIFEKEY[sheet] ? 'ldel' : 'del'}" data-k="${sheet}" data-id="${rec.id}">Delete ${(NAME[sheet] || 'entry').toLowerCase()}</button>` : ''}</form></div>` : '';
   document.body.classList.toggle('lock', !!(f || special));
@@ -388,12 +404,21 @@ function download(name, text, type) {
 const actions = {
   toggle: (id) => mutate(() => { const t = byId(S.tasks, id); t.completed = t.completed ? 0 : 1; t.completed_at = t.completed ? Date.now() : null; }, { close: false }),
   'rem-done': (id) => { const r = byId(S.reminders, id), rep = r && !r.done && r.repeat && r.repeat !== 'none'; mutate(() => L.completeReminder(S, id), { close: false }); if (rep) toast(`Next: ${dtstr(byId(S.reminders, id).at)}`); },
-  'rem-ics': async (id) => { const r = byId(S.reminders, id); if (!r) return; const res = await download(`anna-reminder-${L.tsToDay(r.at)}.ics`, L.reminderICS(r), 'text/calendar'); if (res !== 'cancelled') toast('Open the file and tap “Add to Calendar” so your iPhone alerts you even when Anna is closed.', { ms: 6000 }); },
+  'rem-ios': async (id) => { const r = byId(S.reminders, id); if (!r) return; r.dest = { ...(r.dest || {}), iphone: Date.now() }; await save(); toast('Opening your “ANNA Reminder” shortcut… Check it appears in the Reminders app: ANNA can’t see that app to confirm.', { ms: 7000 }); lastURL = TM.shortcutURL(r); location.href = lastURL; },
+  'rq-save': async () => { const d = pendingReminder; if (!d?.ts) return; pendingReminder = null; const r = { id: L.uid(), title: d.title, notes: null, at: d.ts, repeat: d.repeat || 'none', notified: 0, done: 0, done_at: null, created_at: Date.now(), dest: { anna: Date.now() } };
+    S.reminders.unshift(r); await save(); const st = await kvGet('state'), ok = !!st?.reminders?.some((x) => x.id === r.id);
+    if (!ok) { S.reminders = S.reminders.filter((x) => x.id !== r.id); S.chat.push({ role: 'assistant', content: 'I couldn’t save that reminder on this device. Please try again.', at: Date.now(), tool: 'reminders' }); }
+    else { S.chat.push({ role: 'assistant', content: `Saved in ANNA: “${r.title}”, ${TM.fmtDateTime(r.at)}${r.repeat !== 'none' ? ' (' + repLabel(r).toLowerCase() + ')' : ''}. I’ll alert you while ANNA is open. For an alert when she’s closed, also send it to iPhone Reminders or your Calendar:`, at: Date.now(), tool: 'reminders', follow: r.id }); }
+    await save(); paintChat(true); },
+  'rq-edit': () => { const d = pendingReminder; pendingReminder = null; reminderPrefill = d ? { title: d.title, at: d.ts || undefined, repeat: d.repeat } : null; sheet = 'reminder'; editId = null; render(); },
+  'rq-cancel': async () => { pendingReminder = null; S.chat.push({ role: 'assistant', content: 'Okay, I won’t set it.', at: Date.now(), tool: 'reminders' }); await save(); paintChat(true); },
+  'rem-ics': async (id) => { const r = byId(S.reminders, id); if (!r) return; const res = await download(`anna-reminder-${L.tsToDay(r.at)}.ics`, L.reminderICS(r), 'text/calendar'); if (res !== 'cancelled') { r.dest = { ...(r.dest || {}), ics: Date.now() }; save(); if (tab === 'tasks') render(); } if (res !== 'cancelled') toast('Open the file and tap “Add to Calendar” so your iPhone alerts you even when Anna is closed.', { ms: 6000 }); },
   del: (id, el) => { const k = el.dataset.k, key = KEY[k], arr = S[key], i = arr.findIndex((x) => x.id === id); if (i < 0) return; const item = arr[i];
     mutate(() => { arr.splice(i, 1); }); undo = { key, item, i };
     toast(`${NAME[k]} deleted`, { ms: 6000, action: { label: 'Undo', fn: () => { if (!undo) return; const u = undo; undo = null; mutate(() => { S[u.key].splice(Math.min(u.i, S[u.key].length), 0, u.item); }, { close: false }); } } }); },
   edit: (id, el) => { sheet = el.dataset.k; editId = id; render(); },
   view: (id) => { tab = 'tasks'; taskView = id; sheet = null; render(true); },
+  'rq-x': () => {},
   'chat-open': () => { sheet = 'chat'; render(); paintOrbs(); AI.refresh(); warmChat(); }, 'ctx-open': () => { sheet = 'ctx'; render(); },
   'chat-clear': () => { if (!S.chat.length || confirm('Clear the whole conversation? This cannot be undone (it is also removed from future backups).')) { S.chat = []; save(); paintChat(true); } },
   'chat-stop': () => AI.stop(),
@@ -495,7 +520,7 @@ document.addEventListener('submit', (e) => {
   const up = (obj) => mutate(() => { if (rec) Object.assign(rec, obj); else S[KEY[k]][k === 'tx' || k === 'bill' || k === 'biz' || k === 'budget' ? 'push' : 'unshift']({ id: L.uid(), ...obj }); });
   const sameDay = (iso, old) => (old && L.tsToDay(old) === iso ? old : iso === L.tsToDay(now) ? now : L.dayTs(iso));
   if (k === 'task') return up({ title: f.title.trim(), notes: f.notes.trim() || null, due_at: L.dayTs(f.due), priority: f.priority, ...(rec ? {} : { completed: 0, completed_at: null, created_at: now }) });
-  if (k === 'reminder') { const at = L.dateTimeTs(f.day, f.time); if (!at) return toast('Please choose a valid date and time.'); if (!rec && at < now - 6e4) return toast('That time has already passed. Choose a time in the future.'); up({ title: f.title.trim(), notes: f.notes.trim() || null, at, repeat: f.repeat, notified: rec && rec.at === at ? rec.notified : 0, ...(rec ? {} : { done: 0, done_at: null, created_at: now }) }); return toast(`Reminder set for ${dtstr(at)}.`); }
+  if (k === 'reminder') { const at = L.dateTimeTs(f.day, f.time); if (!at) return toast('Please choose a valid date and time.'); if (!rec && at < now - 6e4) return toast('That time has already passed. Choose a time in the future.'); reminderPrefill = null; up({ title: f.title.trim(), notes: f.notes.trim() || null, at, repeat: f.repeat, notified: rec && rec.at === at ? rec.notified : 0, ...(rec ? {} : { done: 0, done_at: null, created_at: now, dest: { anna: now } }) }); return toast(`Reminder set for ${dtstr(at)}.`); }
   if (k === 'mem') return up({ content: f.content.trim(), category: f.category.trim() || 'General', status: f.status, ...(rec ? {} : { created_at: now }) });
   const cents = L.parseCents(f.amount ?? f.limit); if (cents === null) return toast('Enter an amount like 150 or 12,50 (more than zero).');
   if (k === 'tx') return up({ kind: f.kind, amount_cents: cents, category: f.category.trim() || 'General', note: f.note.trim() || null, occurred_at: sameDay(f.date, rec?.occurred_at) });
@@ -608,5 +633,5 @@ async function saveLifeForm(k, f, form, rec) {
   banner(); render(true);
   document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!locked && hiddenAt && Date.now() - hiddenAt > AUTOLOCK_MS) return lockNow(); if (!locked) { checkReminders(); if (tab === 'home' && !sheet) render(); } });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  window.__anna = { get S() { return S; }, get locked() { return locked; }, get life() { return LIFE; }, offer: (t) => { offerRemember(t); paintChat(true); }, buildCtx: (q) => AI.buildContext(S, S.settings.ai, Date.now(), q, aiLife()), AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
+  window.__anna = { get S() { return S; }, get locked() { return locked; }, get life() { return LIFE; }, get lastURL() { return lastURL; }, offer: (t) => { offerRemember(t); paintChat(true); }, buildCtx: (q) => AI.buildContext(S, S.settings.ai, Date.now(), q, aiLife()), AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
 })();

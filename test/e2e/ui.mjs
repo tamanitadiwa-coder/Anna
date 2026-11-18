@@ -151,7 +151,7 @@ try {
   await page.click('details summary'); await layoutOk('brain with Advanced open');
   await page.click('[data-act="ctx-open"]'); const ctxText = await page.locator('#sheet pre').innerText(); R.ok(/Groceries/.test(ctxText) && /VAT number/.test(ctxText) && !/Mokoena/.test(ctxText) && !/Checkers/.test(ctxText), '"What Anna sees" shows data but never notes or customer names'); await page.click('#sheet [data-act="close"] >> nth=-1');
   // chat without a model
-  await tabTo('home'); await page.click('.ask'); R.ok(/can’t answer yet/.test(await page.locator('#chatmain').innerText()), 'chat explains the AI is not installed'); R.ok(await page.locator('#send').isDisabled(), 'Send is disabled until the AI is ready');
+  await tabTo('home'); await page.click('.ask'); R.ok(/can’t answer yet/.test(await page.locator('#chatmain').innerText()), 'chat explains the AI is not installed'); R.ok(await page.locator('#send').isEnabled(), 'Send stays available for reminders and time questions while the AI is asleep');
   await page.evaluate(() => { window.__anna.S.chat.push({ role: 'user', content: 'Earlier question', at: Date.now() }, { role: 'assistant', content: 'Earlier answer', at: Date.now() }); }); await page.click('[data-act="close"]'); await page.click('.ask');
   R.ok(await page.locator('.bub', { hasText: 'Earlier answer' }).count() === 1, 'chat history is readable without the model'); await layoutOk('chat');
   await page.click('[data-act="chat-to-brain"]'); R.ok(/Brain/.test(await page.locator('h1').innerText()) && await page.locator('#sheet .chat').count() === 0, '"Open Brain setup" button goes to Brain'); await tabTo('home'); await page.click('.ask');
