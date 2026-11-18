@@ -118,7 +118,7 @@ export function relevantMemories(mem, question, n = 10) {
   return usable.map((m, i) => ({ m, s: score(m), i })).sort((a, b) => b.s - a.s || (b.m.created_at || 0) - (a.m.created_at || 0) || a.i - b.i).slice(0, n).map((x) => x.m);
 }
 export function buildContext(S, access = {}, now = Date.now(), question = '', life = null) {
-  const cur = S.settings?.currency || 'R', f = (c) => fmt(c, cur).replace(/ /g, ' '), d = (t) => new Date(t).toISOString().slice(0, 10), sod = new Date(now).setHours(0, 0, 0, 0), out = [`Today: ${d(now)} (${new Date(now).toLocaleDateString('en-ZA', { weekday: 'long' })})`];
+  const cur = S.settings?.currency || 'R', f = (c) => fmt(c, cur).replace(/ /g, ' '), d = (t) => new Date(t).toISOString().slice(0, 10), sod = new Date(now).setHours(0, 0, 0, 0), out = [`Today: ${d(now)} (${new Date(now).toLocaleDateString('en-ZA', { weekday: 'long' })}), time ${String(new Date(now).getHours()).padStart(2, '0')}:${String(new Date(now).getMinutes()).padStart(2, '0')}`];
   if (access.tasks) {
     const open = S.tasks.filter((t) => !t.completed).sort((a, b) => (a.due_at ?? 9e15) - (b.due_at ?? 9e15)).slice(0, 12);
     out.push('TASKS (open):\n' + (open.map((t) => `- ${clip(t.title, 80)}${t.due_at ? ` (due ${d(t.due_at)}${t.due_at < sod ? ', OVERDUE' : ''})` : ''}${t.priority === 'high' ? ' [high priority]' : ''}`).join('\n') || 'none'));
