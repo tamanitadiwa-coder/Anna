@@ -173,6 +173,26 @@ export function parseRemove(text) {
   const name = rest.replace(AMT_ALL, ' ').replace(/\b(?:the|a|an|my|last|latest|recent|newest|one|added|i|just|that|it|item|entry|thing|bill|bills|expense|payment|from|money|please|pls|rand)\b/gi, ' ').replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').trim();
   return { type: 'remove', amount, name, last: last || (!name && !amount) };
 }
+// "How much can I spend on food from the 25th of November to the 26th of December", "…until payday", "…per day this week"
+export function parseSpendWindow(text, now = Date.now()) {
+  const t = String(text || ''), lo = t.toLowerCase();
+  if (!/\bhow much\b[\s\S]*\b(?:spend|use|budget|have)\b|\bbudget\b[\s\S]*\b(?:for|on)\b|\bspend\b[\s\S]*\b(?:per|a) (?:day|week)\b|\bsafe to spend\b/.test(lo)) return null;
+  const on = (lo.match(/\b(?:on|for)\s+(food|groceries|transport|taxi|fuel|petrol|airtime|data|electricity|clothes|going out|fun|lunch|takeaways?|drinks?)\b/) || [])[1] || '';
+  const parts = t.split(/\b(?:to|until|till|untill|through|thru|up to)\b|\s[-–]\s/i), d0 = parts.length > 1 ? dateIn(parts[0], now) : null, d1 = dateIn(parts.length > 1 ? parts.slice(1).join(' ') : t, now);
+  const toPay = /\b(?:to|until|till|untill)\s+(?:my\s+)?(?:next\s+)?pay ?day\b/.test(lo), week = /\bthis week\b/.test(lo), month = /\bthis month\b/.test(lo);
+  if (!d1 && !toPay && !week && !month) return null;
+  let from = d0 ? d0.date : null, to = d1 && (parts.length > 1 || !toPay) ? d1.date : null;
+  if (from && to && to < from) { const x = from; from = to; to = x; }
+  return { type: 'spendWindow', on, from, to, toPay, week, month };
+}
+// Money free to spend between two days, after every bill due up to the end day. Money arriving before the end day counts.
+export function spendWindow({ cash, bills = [], incomes = [] }, from, to, now = Date.now()) {
+  const day = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }, f = day(Math.max(from || now, now)), e = day(to);
+  const inc = incomes.filter((x) => x.amount > 0 && x.date && day(x.date) >= day(now) && day(x.date) < e), un = bills.filter((b) => !b.paid);
+  const due = un.filter((b) => !b.due_at || day(b.due_at) <= e), later = un.filter((b) => b.due_at && day(b.due_at) > e);
+  const incTotal = inc.reduce((n, x) => n + x.amount, 0), dueTotal = due.reduce((n, b) => n + b.amount_cents, 0), free = (cash ?? 0) + incTotal - dueTotal, days = Math.max(1, Math.round((e - f) / 864e5));
+  return { cash, from: f, to: e, days, incomes: inc, incTotal, due, dueTotal, later, laterTotal: later.reduce((n, b) => n + b.amount_cents, 0), free, perDay: free > 0 ? Math.floor(free / days) : 0, perWeek: free > 0 ? Math.floor(free / days * 7) : 0 };
+}
 export function parseMoveDue(text, now = Date.now()) {
   const lo = String(text || '').toLowerCase(), d = dateIn(text, now), pay = /\b(?:pay ?day|pay|paid|salary)\b/.test(lo), billsWord = /\b(?:due dates?|bills|payments|debts|everything)\b/.test(lo);
   if ((/\b(?:change|move|set|put|push|shift|make)\b/.test(lo) || /\bdue dates?\b/.test(lo)) && billsWord && (d || /\bafter (?:my )?pay(?:day)?\b/.test(lo))) return { type: 'moveDue', date: d ? d.date : null, pay: pay && !!d };

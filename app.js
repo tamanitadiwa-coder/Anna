@@ -9,7 +9,7 @@ import * as M from './money.js';
 import * as RT from './router.js';
 import * as OL from './online.js';
 import * as LK from './lookup.js';
-export const VERSION = '1.5.1';
+export const VERSION = '1.5.2';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -330,6 +330,7 @@ function toolReply(text) {
   if (pendingBatch) { const r = batchAnswer(text); if (r) return r; }
   { const rm = M.parseRemove(text); if (rm) { lastRoute = 'finance'; const t = findToRemove(rm); if (!t) return `I couldn’t find ${rm.amount ? M.money(rm.amount.cents) + ' ' : ''}${rm.name ? `“${rm.name}” ` : ''}in your money. Open Money and tap the item to change or delete it.`; pendingEntry = { type: 'remove', target: t, text }; return describeEntry(pendingEntry); } }
   { const mv = M.parseMoveDue(text); if (mv) { lastRoute = 'finance'; if (mv.type === 'moveDue' && !mv.date) { const pd = moneyView().payday; if (!pd) return 'When do you get paid? For example: “move all due dates to the 26th”.'; mv.date = pd.date; } if (mv.type === 'moveDue' && !S.bills.some((b) => !b.paid)) return 'You have no unpaid bills to move.'; pendingEntry = { ...mv, text }; return describeEntry(mv); } }
+  { const sw = M.parseSpendWindow(text); if (sw) { lastRoute = 'finance'; return spendWindowReply(sw); } }
   if (!['reminders', 'calc', 'staff', 'memory', 'journal', 'research'].includes(RT.route(text))) { const mb = M.parseItems(text); if (mb) { lastRoute = 'finance'; return batchStart(mb, text); } }
   lastRoute = RT.route(text);
   if (lastRoute === 'memory') return memoryReply(text);
@@ -905,6 +906,17 @@ function entryReply(text) {
   pendingEntry = { ...e, text }; return describeEntry(e);
 }
 // newest first: everything money-shaped ANNA can remove from chat
+function spendWindowReply(sw) {
+  const v = moneyView(), P = v.plan, m = (c) => M.money(c), now = Date.now(), d = new Date(now);
+  if (P.cash == null) return 'First tell me how much you have right now (for example “I have R4000 right now”), then I can work it out.';
+  let to = sw.to; if (!to && sw.toPay) to = P.incomes[0]?.date; if (!to && sw.week) to = now + (7 - d.getDay()) * 864e5; if (!to && sw.month) to = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12).getTime();
+  if (!to) return 'Until when? For example: “how much can I spend on food until the 26th”.';
+  const from = sw.from || now, w = M.spendWindow({ cash: P.cash, bills: S.bills, incomes: P.incomes }, from, to, now), what = sw.on ? ` on ${sw.on}` : '';
+  const head = w.free <= 0 ? `From ${dstr(w.from)} to ${dstr(w.to)} there’s nothing free to spend${what}: your bills are ${m(-w.free)} more than your money.` : `From ${dstr(w.from)} to ${dstr(w.to)} (${w.days} days) you can spend ${m(w.free)}${what}. That’s about ${m(w.perDay)} a day, or ${m(w.perWeek)} a week.`;
+  const how = `How: ${m(w.cash)} now${w.incTotal ? ` + ${w.incomes.map((x) => `${m(x.amount)} ${x.name.toLowerCase()} on ${dstr(x.date)}`).join(' + ')}` : ''} − ${m(w.dueTotal)} bills due by ${dstr(w.to)} = ${w.free < 0 ? '−' + m(-w.free) : m(w.free)}.`;
+  const notes = [w.from > now + 864e5 && w.free > 0 ? `This is if you spend nothing extra before ${dstr(w.from)}.` : '', w.laterTotal ? `Not counted: ${m(w.laterTotal)} in bills due after ${dstr(w.to)}.` : '', sw.on ? `This is everything that’s free, so ${sw.on} has to come out of it along with anything else you buy.` : ''].filter(Boolean);
+  return [head, how, ...notes].join('\n');
+}
 function findToRemove(rm) {
   const want = rm.amount?.cents, nm = (rm.name || '').toLowerCase(), all = [
     ...S.bills.map((b, i) => ({ kind: 'bill', id: b.id, label: `${b.kind === 'debt' ? 'debt' : 'bill'} “${b.name}”`, name: b.name, cents: b.amount_cents, at: b.created_at || i, paid: b.paid })),

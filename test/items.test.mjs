@@ -80,3 +80,11 @@ test('v1.5.1: "Add mama ejima 5000 debt …" is a debt; recent past dates are ov
   assert.equal(new Date(M.classifyItem('R5000 coming on 10 January from a client', N).date).getFullYear(), 2027);
 });
 test('v1.5.1: owe names stop before amounts', () => { assert.equal(M.classifyItem('I owe Sipho R300 on the 30th', NOW).name, 'Sipho (debt)'); });
+test('v1.5.2: how much can I spend between two dates', () => {
+  const N = new Date(2026, 10, 19, 23).getTime(), s = M.parseSpendWindow('How much can i spend on food with the amount left right now From the 25th of November to the 26th of December', N);
+  assert.deepEqual([s.on, new Date(s.from).getDate(), new Date(s.to).getMonth(), new Date(s.to).getDate()], ['food', 25, 11, 26]);
+  assert.equal(M.parseSpendWindow('how much can I spend until payday', N).toPay, true); assert.equal(M.parseSpendWindow('R500 for rent on the 25th', N), null);
+  const p25 = new Date(2026, 10, 25, 12).getTime(), d26 = new Date(2026, 11, 26, 12).getTime();
+  const w = M.spendWindow({ cash: 410000, bills: [{ amount_cents: 150000, due_at: p25 }, { amount_cents: 600000, due_at: new Date(2026, 11, 1, 12).getTime() }, { amount_cents: 100000, due_at: new Date(2027, 0, 5).getTime() }, { amount_cents: 9, due_at: p25, paid: 1 }], incomes: [{ name: 'Payday', amount: 1050000, date: p25 }, { name: 'Next', amount: 1, date: d26 }] }, p25, d26, N);
+  assert.deepEqual([w.free, w.days, w.perDay, w.incTotal, w.dueTotal, w.laterTotal], [710000, 31, 22903, 1050000, 750000, 100000]);
+});
