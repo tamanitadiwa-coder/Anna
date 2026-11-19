@@ -7,7 +7,8 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.3.2';
+import * as OL from './online.js';
+export const VERSION = '1.4.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -220,6 +221,7 @@ const screens = {
       <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
         <div class="row wrap"><button class="btn sm" data-act="logo-pick">${logoUrl ? 'Replace logo…' : 'Upload logo…'}</button>${logoUrl ? '<button class="btn sage sm" data-act="logo-reset">Reset to default</button>' : ''}</div><input id="logofile" type="file" accept="image/*" hidden></div>
       <div class="card"><div class="swrow"><div class="grow"><b>Auto-save chat money entries (undo available)</b><div class="mute">Off: ANNA shows what she understood and waits for your tap.</div></div><button class="sw ${S.settings.autoMoney ? 'on' : ''}" data-act="automoney" aria-label="Auto-save chat money entries"></button></div></div>
+      ${onlineCard()}
       <div class="card"><h2>Web research</h2><div class="mute" style="margin:4px 0 8px">Not switched on. Questions about news, weather or other current events need a web search service you approve first. Until then ANNA says so and never guesses. Nothing leaves this device.</div><div class="mute">Options waiting for your approval:<br>• Tavily: 1,000 searches a month free, then about $0.008 each. Needs a Tavily API key.<br>• Brave Search API: about $5 per 1,000 searches, with a $5 monthly credit. Needs a Brave API key and a card on file.</div></div>
       <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
         <div class="row"><button class="btn grow" data-act="export">Export backup</button><button class="btn sage grow" data-act="import">Restore…</button></div><input id="file" type="file" accept="application/json,.json" hidden>
@@ -362,11 +364,33 @@ function journalReply(text) {
 }
 const reminderAsk = () => { const d = pendingReminder; return `Shall I remind you to “${d.title}” on ${TM.fmtDateTime(d.ts)}${d.repeat && d.repeat !== 'none' ? ', repeating ' + ({ daily: 'every day', weekly: 'every week', monthly: 'every month' }[d.repeat]) : ''}${d.hasTime === false ? ' (I picked 09:00, change it if you like)' : ''}?`; };
 async function sendChat(text, opts) {
-  text = text.trim(); if (!text || AI.ai.busy) return;
-  const tool = toolReply(text);
-  if (tool) { const tag = pendingReminder ? 'reminders' : pendingEntry || pendingBatch ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
+  text = text.trim(); if (!text || AI.ai.busy || onlineBusy) return;
+  lastAsked = text; const tool = toolReply(OL.applyWords(text, S.settings.words || []));
+  if (tool) return showTool(text, tool, opts);
+  if (!opts?.noOnline && OL.ready() && await onlineHelp(text)) return;
+  return askBrain(text, opts);
+}
+let lastAsked = '', onlineBusy = false;
+async function showTool(text, tool, opts) {
+  { const tag = pendingReminder ? 'reminders' : pendingEntry || pendingBatch ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: (opts?.note ? opts.note + '\n' : '') + tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
     if (S.settings.autoMoney && pendingEntry && pendingEntry.type !== 'remove') return saveEntry(); if (S.settings.autoMoney && pendingBatch && !pendingBatch.ask.length) return batchSave();
-    if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingBatch && !pendingReminder && !BK) await phrase(msg, text); return; }
+    if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingBatch && !pendingReminder && !BK && !opts?.note) await phrase(msg, text); return; }
+}
+// v1.4 online helper: only the words of this one message go online; new words are kept so ANNA knows them offline
+async function onlineHelp(text, misread = '') {
+  onlineBusy = true; toast(misread ? 'Checking online what you meant…' : 'Checking online…', { ms: 2500 }); let r;
+  try { r = await OL.interpret(text, { misread }); } catch (e) { onlineBusy = false; if (/key|limit/i.test(e.message)) toast(e.message, { ms: 5000 }); return false; }
+  onlineBusy = false;
+  const fresh = r.words.filter((w) => !(S.settings.words || []).some((x) => x.word === w.word && x.means === w.means));
+  if (r.words.length) S.settings.words = OL.mergeWords(S.settings.words || [], r.words);
+  const learned = fresh.length ? `\nNew word${fresh.length === 1 ? '' : 's'} learned: ${fresh.map((w) => `“${w.word}” = ${w.means}`).join(', ')}.` : '';
+  const cmd = r.command && OL.applyWords(r.command, S.settings.words || []), tool = cmd && cmd.toLowerCase() !== text.toLowerCase() ? toolReply(cmd) : null;
+  if (tool) { await showTool(text, tool, { note: `I read that as: “${r.command}”.${learned}` }); return true; }
+  if (misread && !r.answer) return false;
+  if (!r.answer) { if (learned) await save(); return false; }
+  S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: r.answer + learned, at: Date.now(), tool: 'online' }); paintChat(true); await save(); return true;
+}
+async function askBrain(text, opts) {
   if (AI.ai.state === 'cached' && !AI.ai.crashed) { toast('Waking ANNA’s brain…'); await AI.load(); }
   if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
@@ -526,14 +550,18 @@ const actions = {
   'notif-test': async () => { const ok = await notify('Anna', 'This is how reminders will look.'); toast(ok ? 'Test alert sent.' : 'Could not show a notification.'); },
   lock: () => lockNow(),
   bizview: (id) => { bizView = id; render(); },
-  'ent-save': () => saveEntry(), 'ent-cancel': async () => { pendingEntry = null; say('Okay, nothing saved.'); },
+  'ent-save': () => saveEntry(), 'ent-cancel': async () => { const was = pendingEntry && describeEntry(pendingEntry); pendingEntry = null; if (was && lastAsked && OL.ready() && await onlineHelp(lastAsked, was)) return; say('Okay, nothing saved.'); },
   'ent-edit': () => { const e = pendingEntry; pendingEntry = null; paintChat(true); const ta = $('.chatin textarea'); if (ta && e) { ta.value = e.text; ta.focus(); } },
-  'bat-save': () => batchSave(), 'bat-cancel': () => { pendingBatch = null; say('Okay, nothing saved.'); },
+  'bat-save': () => batchSave(), 'bat-cancel': async () => { const was = pendingBatch && 'a list of money items'; pendingBatch = null; if (was && lastAsked && OL.ready() && await onlineHelp(lastAsked, was)) return; say('Okay, nothing saved.'); },
   'bat-del': (i) => { const b = pendingBatch; if (!b) return; b.items.splice(Number(i), 1); if (!b.items.length) { pendingBatch = null; return say('Okay, nothing saved.'); } say(batchText()); },
   'bat-edit': (i) => { const b = pendingBatch; if (!b) return; const [x] = b.items.splice(Number(i), 1); b.editing = true; paintChat(true); const ta = $('.chatin textarea'); if (ta && x) { ta.value = x.text; ta.focus(); } },
   mmore: () => mutate(() => { S.settings.moneyMore = !S.settings.moneyMore; }, { close: false }),
   'inc-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   'wish-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
+  'ol-on': () => { const c = OL.config(); if (!c.on && !c.key) { toast('Paste your free Groq API key first, then switch this on.', { ms: 5000 }); return; } OL.setConfig({ on: !c.on }); render(); },
+  'ol-forget': () => { OL.setConfig({ key: '', on: false }); render(); toast('Online key removed from this phone.'); },
+  'ol-word-del': (word) => mutate(() => { S.settings.words = (S.settings.words || []).filter((x) => x.word !== word); }, { close: false }),
+  'ol-test': async () => { if (!OL.config().key) return toast('Save a key first.'); toast('Testing…'); try { const r = await OL.interpret('cgange all due dates after pay on the 26th'); toast(r.command ? `Works. Understood: “${r.command}”` : 'Works, but no command came back. Try another model.', { ms: 6000 }); } catch (e) { toast(e.message || 'Could not reach the online helper.', { ms: 6000 }); } },
   automoney: () => mutate(() => { S.settings.autoMoney = !S.settings.autoMoney; }, { close: false }),
   'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; for (const f of u.fin || []) { LIFE.finance = LIFE.finance.filter((x) => x.id !== f.id).concat(f.prev ? [f.prev] : []); if (f.prev) await LF.put('finance', f.prev); else await LF.del('finance', f.id); } if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
   'books-start': () => { BK = { step: 0, month: M.booksMonth() }; booksAsk(); }, 'books-snooze': async () => { await booksState({ snoozeUntil: new Date().setHours(24, 0, 0, 0) }); say('Okay, I’ll ask again tomorrow.'); },
@@ -620,6 +648,7 @@ document.addEventListener('submit', (e) => {
   if (k === 'chat') { const ta = form.querySelector('textarea'), t = ta.value; ta.value = ''; ta.style.height = ''; return sendChat(t); }
   if (k === 'journal' || k === 'goal' || k === 'glog' || k === 'person' || k === 'shift') return saveLifeForm(k, f, form, rec);
   if (k === 'cash' || k === 'incoming') return saveFinForm(k, f);
+  if (k === 'olkey') { const p = { model: (f.model || '').trim() || OL.DEFAULT_MODEL }; if ((f.key || '').trim()) { p.key = f.key.trim(); p.on = true; } OL.setConfig(p); render(); return toast(p.key ? 'Key saved on this phone. Online helper is on.' : 'Saved.'); }
   const missing = req(f, { task: ['title'], reminder: ['title', 'day', 'time'], tx: ['amount'], bill: ['name', 'amount', 'due'], budget: ['category', 'limit'], biz: ['amount', 'description'], mem: ['content'] }[k] || []);
   if (missing) { const el = form.querySelector(`[name=${missing}]`); el?.focus(); return toast('Please fill in: ' + (el?.closest('label')?.querySelector('span')?.textContent || missing)); }
   const up = (obj) => mutate(() => { if (rec) Object.assign(rec, obj); else S[KEY[k]][k === 'tx' || k === 'bill' || k === 'biz' || k === 'budget' ? 'push' : 'unshift']({ id: L.uid(), ...obj }); });
@@ -789,6 +818,13 @@ function calcPanel() { M.setCurrency(curCode()); const sel = (k, opts) => fld(op
   return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Calculator"><div class="gr"></div><div class="row"><h2 class="grow">Calculator</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="chips" style="margin:8px 0">${CTABS.map(([k, n]) => `<button data-act="ctab" data-id="${k}" class="${k === calcTab ? 'on' : ''}">${n}</button>`).join('')}</div>${f}<div class="card" id="cres">${calcResult()}</div></div>`; }
 let payId = null;
+function onlineCard() {
+  const c = OL.config(), w = S.settings.words || [];
+  return `<div class="card" id="onlinecard"><div class="swrow"><div class="grow"><b>Online helper</b><div class="mute">When you have data and ANNA doesn’t understand you (or you tap Cancel because she got it wrong), she asks a free online AI what you meant and learns the new words for offline use. Only the words of that one message are sent: never your balance, bills, memories or chat.</div></div><button class="sw ${c.on ? 'on' : ''}" data-act="ol-on" role="switch" aria-checked="${c.on}" aria-label="Online helper"><i></i></button></div>
+    <form data-form="olkey" style="margin-top:10px">${fld('Groq API key (free at console.groq.com)', `<input name="key" type="password" autocomplete="off" placeholder="${c.key ? 'Saved ••••' + esc(c.key.slice(-4)) : 'gsk_…'}">`)}${fld('Model', `<input name="model" value="${esc(c.model)}" autocapitalize="off">`)}<div class="row wrap"><button class="btn sm">Save</button><button class="btn sage sm" type="button" data-act="ol-test">Test</button>${c.key ? '<button class="btn sage sm" type="button" data-act="ol-forget">Remove key</button>' : ''}</div></form>
+    <div class="mute" style="margin-top:8px">The key stays on this phone only and is never put in backups.</div>
+    ${w.length ? `<h3 style="margin:12px 0 4px">Words ANNA learned (${w.length})</h3>${w.slice().reverse().map((x) => `<div class="mrow"><div class="grow"><b>${esc(x.word)}</b> <span class="mute">= ${esc(x.means)}</span></div><button class="ib" data-act="ol-word-del" data-id="${esc(x.word)}" aria-label="Forget ${esc(x.word)}">${ic('x')}</button></div>`).join('')}` : ''}</div>`;
+}
 function payPanel() { const b = byId(S.bills, payId); if (!b) return '';
   return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Pay ${esc(b.name)}"><div class="gr"></div><div class="row"><h2 class="grow">${esc(b.name)}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="mute" style="margin:4px 0 12px">${money(b.amount_cents)} · due ${dstr(b.due_at)}</div>

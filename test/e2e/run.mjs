@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { RESULTS } from './lib.mjs';
-const runs = [['ui.mjs'], ['ui.mjs', 'desktop'], ['life.mjs'], ['reminders.mjs'], ['money.mjs'], ['books.mjs'], ['routing.mjs'], ['items.mjs'], ['offline.mjs']];
+const runs = [['ui.mjs'], ['ui.mjs', 'desktop'], ['life.mjs'], ['reminders.mjs'], ['money.mjs'], ['books.mjs'], ['routing.mjs'], ['items.mjs'], ['online.mjs'], ['offline.mjs']];
 spawnSync(process.execPath, ['scripts/build.mjs'], { stdio: 'inherit' });
 const sum = [];
 for (const r of runs) { console.log(`\n=== ${r.join(' ')} ===`); const p = spawnSync(process.execPath, [new URL(r[0], import.meta.url).pathname, ...r.slice(1)], { stdio: 'inherit', env: process.env }); sum.push({ run: r.join(' '), exit: p.status }); }
