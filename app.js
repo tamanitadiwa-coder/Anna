@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -150,7 +150,14 @@ const screens = {
     const tx = [...S.tx].sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 40);
     const v = moneyView(), o = v.order, som = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime(), bought = S.tx.filter((t) => t.kind === 'expense' && t.occurred_at >= som).sort((a, b) => b.occurred_at - a.occurred_at), more = !!S.settings.moneyMore;
     const kind = (b) => (b.kind === 'debt' ? 'Debt' : b.kind === 'planned' ? 'Planned' : 'Bill');
-    const simple = `<div class="hero" id="today"><div class="k">Money now</div><div class="big">${v.cash == null ? '—' : money(v.cash)}</div><div class="pills"><div class="pill"><span>${v.payday ? 'Days to payday' : 'Days to month end'}</span><b>${v.days}</b></div><div class="pill"><span>Safe per day</span><b>${v.perDay == null ? '—' : money(v.perDay)}</b></div></div>${v.cash == null ? '<div class="mute">Tell ANNA how much you have right now.</div>' : ''}</div>
+    const P = v.plan, p0 = P.periods[0], nx = P.incomes[0], perDay = (x) => (x.perDay == null ? '—' : money(x.perDay));
+    const coming = P.periods.slice(1).map((q) => `<div class="mrow"><div class="grow"><b>${esc(q.income.name)} · ${dstr(q.income.date)}</b><div class="mute">${P.cash == null ? `+${money(q.income.amount)} coming in` : `You’ll have ${money(q.dueTotal ? q.end : q.start)}${q.dueTotal ? ` after ${money(q.dueTotal)} bills` : ''} if you only pay bills`}</div>${q.safe == null ? '' : `<div class="mute">Safe to spend then <b class="pos">${money(q.safe)}</b> · ${perDay(q)} a day for ${q.days} days</div>`}</div><b class="pos">+${money(q.income.amount)}</b>${q.income.id && q.income.id !== 'payday' ? `<button class="ib" data-act="inc-del" data-id="${q.income.id}" aria-label="Remove ${esc(q.income.name)}">${ic('x')}</button>` : ''}</div>`).join('');
+    const simple = `<div class="hero" id="today"><div class="k">Left after all bills</div><div class="big ${P.left != null && P.left < 0 ? 'neg' : ''}">${P.left == null ? '—' : P.left < 0 ? '−' + money(-P.left) : money(P.left)}</div>
+      ${P.cash == null ? `<div class="mute">Tell ANNA how much you have right now${P.billsTotal ? ` · ${money(P.billsTotal)} in bills` : ''}.</div>` : `<div class="sum" id="msum">${money(P.cash)} now${P.coming ? ` + ${money(P.coming)} coming` : ''} − ${money(P.billsTotal)} bills</div>`}
+      <div class="pills"><div class="pill wide" id="safenow"><span>Safe to spend now</span><b>${p0.safe == null ? '—' : money(p0.safe)}</b><small>${perDay(p0)} a day</small></div><div class="pill"><span>${nx ? 'Days to ' + esc(nx.name.toLowerCase()) : 'Days to month end'}</span><b>${p0.days}</b></div></div>
+      ${P.short ? `<div class="runout">Short by ${money(P.short)} before all bills are paid. Pay order below shows where.</div>` : ''}
+      ${coming ? `<div class="coming" id="coming"><div class="k">Money coming</div>${coming}</div>` : ''}
+      <div class="adds"><button class="btn sm" data-act="open" data-id="cash">${P.cash == null ? 'Set money now' : 'Update money now'}</button><button class="btn sm soft" data-act="open" data-id="incoming">＋ Money coming</button></div></div>
       ${o.rows.length ? sh('Pay first') + `<div class="card" id="payfirst">${o.rows.map((b, i) => `${i === o.runsOutAt ? '<div class="runout">Money runs out here</div>' : ''}<div class="prow" data-act="pay" data-id="${b.id}"><div class="grow"><b>${esc(b.name)}</b><div class="mute">P${b.priority || 2} · ${kind(b)} · due ${dstr(b.due_at)}</div></div><div class="amt"><b>${money(b.amount_cents)}</b><div class="mute">${money(b.running)}</div></div></div>`).join('')}<div class="mute" style="margin-top:6px">Tap one to mark it paid.</div></div>` : ''}
       ${sh('To be stable')}<div class="card" id="stable">${v.cash == null ? '<div class="mute">Tell ANNA how much you have to see this.</div>' : `<div class="bignum ${v.gap > 0 ? 'over' : 'pos'}">${v.gap > 0 ? `You need ${money(v.gap)} more` : `You’re covered, ${money(-v.gap)} spare`}</div><div class="mute">Everything unpaid ${money(o.total)} + ${money(v.buffer)} buffer = ${money(v.needed)}</div>`}</div>
       ${v.wishes.length ? sh('Want to buy') + `<div class="card" id="wishes">${v.wishes.map((w) => `<div class="prow"><div class="grow"><b>${esc(w.name)}</b><div class="${w.status === 'now' ? 'pos' : 'mute'}">${wishLabel(w)}</div></div><b>${money(w.price)}</b><button class="ib" data-act="wish-del" data-id="${w.id}" aria-label="Remove ${esc(w.name)}">${ic('x')}</button></div>`).join('')}</div>` : ''}
@@ -372,6 +379,8 @@ const opt = (v, n, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' :
 const val = (x) => `value="${esc(x ?? '')}"`;
 const catList = (id, xs) => `<datalist id="${id}">${[...new Set(xs.filter(Boolean))].slice(0, 40).map((c) => `<option value="${esc(c)}">`).join('')}</datalist>`;
 const FORMS = {
+  cash: () => [ 'Money now', `${fld(`How much do you have right now? (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required ${moneyView().cash != null ? val(L.centsToInput(moneyView().cash)) : ''}>`)}<div class="mute">All your accounts and cash together. ANNA subtracts every unpaid bill from this.</div>`, 'Save'],
+  incoming: () => [ 'Money coming', `${fld('From / what for', `<input name="name" placeholder="e.g. Salary, client, refund" maxlength="60" required>`)}<div class="two">${fld(`Amount (${esc(cur())})`, `<input name="amount" inputmode="decimal" placeholder="0,00" required>`)}${fld('Date it comes', `<input name="date" type="date" required>`)}</div><div class="mute">Any date, also next year. It adds to what you’ll have from that day.</div>`, 'Add'],
   task: (r = {}) => [r.id ? 'Edit task' : 'New task', `${fld('Task', `<input name="title" placeholder="What needs doing?" maxlength="200" required ${val(r.title)}>`)}<div class="two">${fld('Due date', `<input name="due" type="date" ${val(L.tsToDay(r.due_at))}>`)}${fld('Priority', `<select name="priority">${opt('normal', 'Normal', r.priority || 'normal')}${opt('high', 'High', r.priority)}${opt('low', 'Low', r.priority)}</select>`)}</div>${fld('Notes', `<textarea name="notes" rows="2" placeholder="Optional" maxlength="500">${esc(r.notes || '')}</textarea>`)}`, r.id ? 'Save task' : 'Add task'],
   reminder: (r = {}) => { const at = r.at || (() => { const d = new Date(Date.now() + 36e5); d.setMinutes(0, 0, 0); return d.getTime(); })();
     return [r.id ? 'Edit reminder' : 'New reminder', `${fld('Remind me to', `<input name="title" placeholder="e.g. Pay the domestic worker" maxlength="200" required ${val(r.title)}>`)}<div class="two">${fld('Date', `<input name="day" type="date" required ${val(L.tsToDay(at))}>`)}${fld('Time', `<input name="time" type="time" required ${val(L.tsToTime(at))}>`)}</div>${fld('Repeat', `<select name="repeat">${L.REPEATS.map(([k, n]) => opt(k, n, r.repeat || 'none')).join('')}</select>`)}${fld('Notes', `<textarea name="notes" rows="2" placeholder="Optional" maxlength="500">${esc(r.notes || '')}</textarea>`)}`, r.id ? 'Save reminder' : 'Set reminder']; },
@@ -519,6 +528,7 @@ const actions = {
   'bat-del': (i) => { const b = pendingBatch; if (!b) return; b.items.splice(Number(i), 1); if (!b.items.length) { pendingBatch = null; return say('Okay, nothing saved.'); } say(batchText()); },
   'bat-edit': (i) => { const b = pendingBatch; if (!b) return; const [x] = b.items.splice(Number(i), 1); b.editing = true; paintChat(true); const ta = $('.chatin textarea'); if (ta && x) { ta.value = x.text; ta.focus(); } },
   mmore: () => mutate(() => { S.settings.moneyMore = !S.settings.moneyMore; }, { close: false }),
+  'inc-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   'wish-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   automoney: () => mutate(() => { S.settings.autoMoney = !S.settings.autoMoney; }, { close: false }),
   'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; for (const f of u.fin || []) { LIFE.finance = LIFE.finance.filter((x) => x.id !== f.id).concat(f.prev ? [f.prev] : []); if (f.prev) await LF.put('finance', f.prev); else await LF.del('finance', f.id); } if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
@@ -605,6 +615,7 @@ document.addEventListener('submit', (e) => {
   const f = Object.fromEntries(new FormData(form)), now = Date.now(), k = form.dataset.form, rec = editId ? byId((LIFEKEY[k] ? LIFE[LIFEKEY[k]] : S[KEY[k]]) || [], editId) : null;
   if (k === 'chat') { const ta = form.querySelector('textarea'), t = ta.value; ta.value = ''; ta.style.height = ''; return sendChat(t); }
   if (k === 'journal' || k === 'goal' || k === 'glog' || k === 'person' || k === 'shift') return saveLifeForm(k, f, form, rec);
+  if (k === 'cash' || k === 'incoming') return saveFinForm(k, f);
   const missing = req(f, { task: ['title'], reminder: ['title', 'day', 'time'], tx: ['amount'], bill: ['name', 'amount', 'due'], budget: ['category', 'limit'], biz: ['amount', 'description'], mem: ['content'] }[k] || []);
   if (missing) { const el = form.querySelector(`[name=${missing}]`); el?.focus(); return toast('Please fill in: ' + (el?.closest('label')?.querySelector('span')?.textContent || missing)); }
   const up = (obj) => mutate(() => { if (rec) Object.assign(rec, obj); else S[KEY[k]][k === 'tx' || k === 'bill' || k === 'biz' || k === 'budget' ? 'push' : 'unshift']({ id: L.uid(), ...obj }); });
@@ -715,6 +726,18 @@ async function saveLifeForm(k, f, form, rec) {
     if (!rec) LIFE.staff.push(sh); else Object.assign(rec, sh); await LF.put('staff', sh); sheet = null; editId = null; render(); return toast(rec ? 'Shift updated.' : 'Shift added.'); }
   if (k === 'glog') { const v = Number(String(f.value || '').replace(',', '.')); if (!(v > 0)) return toast('Enter an amount above zero.'); const at = f.date && f.date !== LF.todayISO() ? new Date(f.date + 'T12:00:00').getTime() : now;
     const p = { id: L.uid(), goal: logGoal, value: v, note: String(f.note || '').trim(), at }; LIFE.progress.push(p); await LF.put('progress', p); sheet = null; render(); return toast('Progress logged.'); }
+}
+
+// Money now / money coming, from the main Money card
+async function saveFinForm(k, f) {
+  const cents = L.parseCents(f.amount); if (cents === null && !(k === 'cash' && /^\s*0+([.,]0+)?\s*$/.test(f.amount || ''))) return toast('Enter an amount like 150 or 12,50.');
+  const now = Date.now(); let r;
+  if (k === 'cash') r = { id: 'cash', type: 'cash', balance: cents || 0, at: now };
+  else { if (!String(f.name || '').trim()) return toast('Please say what the money is for.'); if (!f.date) return toast('Please choose the date it comes.');
+    const date = new Date(f.date + 'T12:00:00').getTime(); if (M.daysUntil(date) < 0) return toast('That date has passed. Record it as income instead.');
+    r = { id: 'incoming-' + L.uid().slice(0, 8), type: 'incoming', name: f.name.trim(), amount: cents, date, at: now }; }
+  LIFE.finance = LIFE.finance.filter((y) => y.id !== r.id).concat(r); await LF.put('finance', r); sheet = null; render();
+  toast(k === 'cash' ? 'Money now updated.' : `Added: ${L.fmt(r.amount, cur())} on ${dstr(r.date)}.`);
 }
 
 // ---- money & business tools (money.js does all maths; ANNA only explains) ----
@@ -882,7 +905,7 @@ async function booksReminder() {
   await save(); actions['rem-ios'](r.id);
 }
 // ---- many money items in one message (balance, planned payments, debts, payday, expenses): one card, Save all ----
-const itemLine = (x, i) => { M.setCurrency(curCode()); return `${i + 1}. ${M.ITEM_LABEL[x.type]} · ${x.name} · ${M.money(x.amount)}${x.date ? ' · ' + dstr(x.date) : ''}`; };
+const itemLine = (x, i) => { M.setCurrency(curCode()); return `${i + 1}. ${x.incoming ? 'Money coming' : M.ITEM_LABEL[x.type]} · ${x.name} · ${M.money(x.amount)}${x.date ? ' · ' + dstr(x.date) : ''}`; };
 function batchText() {
   const b = pendingBatch, p = M.cashPlan(b.items);
   const L = [`I found ${b.items.length} money ${b.items.length === 1 ? 'item' : 'items'}:`, ...b.items.map(itemLine), ...M.cashPlanText(p)];
@@ -908,10 +931,11 @@ async function batchSave() {
   const b = pendingBatch; if (!b) return; pendingBatch = null; M.setCurrency(curCode());
   const now = Date.now(), items = b.items.map((x) => (x.type === 'unknown' ? { ...x, type: 'planned' } : x)), plan = M.cashPlan(items);
   const finIds = ['cash', 'payday'], before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: finIds.map((id) => ({ id, prev: LIFE.finance.find((x) => x.id === id) || null })) };
-  const pay = items.find((x) => x.type === 'income' && x.date) || moneyView().payday, endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), due = (x) => x.date || pay?.date || endOfMonth, fin = [];
+  const pay = items.find((x) => x.type === 'income' && x.date && !x.incoming) || moneyView().payday, endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), due = (x) => x.date || pay?.date || endOfMonth, fin = [];
   for (const x of items) {
     if (x.type === 'wish') { const r = { id: 'wish-' + L.uid().slice(0, 8), type: 'wish', name: x.name, price: x.amount, at: now }; fin.push(r); before.fin.push({ id: r.id, prev: null }); }
     else if (x.type === 'balance') fin.push({ id: 'cash', type: 'cash', balance: x.amount, at: now });
+    else if (x.type === 'income' && x.date && x.incoming) { const r = { id: 'incoming-' + L.uid().slice(0, 8), type: 'incoming', name: x.name, amount: x.amount, date: x.date, at: now }; fin.push(r); before.fin.push({ id: r.id, prev: null }); }
     else if (x.type === 'income' && x.date) fin.push({ id: 'payday', type: 'payday', amount: x.amount, date: x.date, name: x.name, at: now });
     else if (x.type === 'income') S.tx.push({ id: L.uid(), kind: 'income', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
     else if (x.type === 'expense') S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
@@ -929,7 +953,8 @@ async function batchSave() {
 function moneyView() {
   const c = LIFE.finance.find((x) => x.id === 'cash'), p = LIFE.finance.find((x) => x.id === 'payday');
   const cash = c ? c.balance + S.tx.filter((t) => t.occurred_at > c.at).reduce((n, t) => n + (t.kind === 'income' ? t.amount_cents : -t.amount_cents), 0) : null;
-  return M.moneyToday({ cash, bills: S.bills, payday: p && M.daysUntil(p.date) >= 0 ? { amount: p.amount, date: p.date } : null, wishes: LIFE.finance.filter((x) => x.type === 'wish').map((w) => ({ id: w.id, name: w.name, price: w.price })) });
+  const pd = p && M.daysUntil(p.date) >= 0 ? { amount: p.amount, date: p.date } : null, incomes = [...(pd ? [{ id: 'payday', name: p.name && p.name !== 'Pay' ? p.name : 'Payday', ...pd }] : []), ...LIFE.finance.filter((x) => x.type === 'incoming').map((x) => ({ id: x.id, name: x.name, amount: x.amount, date: x.date }))];
+  return M.moneyToday({ cash, bills: S.bills, payday: pd, incomes, wishes: LIFE.finance.filter((x) => x.type === 'wish').map((w) => ({ id: w.id, name: w.name, price: w.price })) });
 }
 const wishLabel = (w) => ({ now: 'Can buy now', payday: `Wait until ${dstr(moneyView().until)}`, later: 'Not yet' })[w.status];
 // chat questions about money/staff → exact answers from money.js

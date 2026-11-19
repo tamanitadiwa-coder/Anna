@@ -201,3 +201,11 @@ img,svg{-webkit-user-drag:none;-webkit-touch-callout:none}
 .prow{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 0;border-bottom:1px solid var(--line)}.prow:last-child{border-bottom:0}.prow .amt{text-align:right}
 .runout{margin:8px 0 2px;padding:6px 10px;border-radius:10px;border:1px dashed rgba(255,120,120,.5);color:#FFB4B4;font-size:13px;text-align:center}
 .bignum{font:300 26px/1.2 var(--brand);margin:2px 0 6px;color:var(--ink)}.bignum.over{color:#FFB4B4}.bignum.pos{color:#A9DFFF}
+/* v1.3 main Money card */
+.hero .sum{font-size:15px;color:var(--silver2);margin:-6px 0 12px}
+.hero .big.neg{background:none;color:#FFB4B4;-webkit-text-fill-color:#FFB4B4}
+.hero .coming{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.hero .coming .k{margin-bottom:4px}
+.mrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.mrow:last-child{border-bottom:0}.mrow .mute b{font-weight:600}
+.hero .adds{margin:14px 0 0}
+.hero .pill.wide{flex:1 1 55%}.hero .pill small{display:block;font-size:13px;color:var(--silver2);margin-top:2px}

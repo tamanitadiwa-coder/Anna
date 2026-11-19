@@ -40,3 +40,22 @@ test('wishlist keyword and the simple Money view numbers', () => {
   assert.deepEqual(v.order.rows.map((r) => r.name), ['Ashraf', 'Mom']);
   assert.deepEqual(v.wishes.map((w) => w.status), ['payday', 'now', 'later']);
 });
+test('v1.3 main Money card: left after all bills, safe now, money coming', () => {
+  const pd = new Date(2026, 10, 25, 12).getTime(), dec1 = new Date(2026, 11, 1, 12).getTime(), jan10 = new Date(2027, 0, 10, 12).getTime();
+  const bills = [{ name: 'House deposit', amount_cents: 150000, due_at: pd }, { name: 'Ashraf', amount_cents: 50000, due_at: pd }, { name: 'Moving', amount_cents: 50000, due_at: pd }, { name: 'Rent', amount_cents: 600000, due_at: dec1 }];
+  const p = M.moneyPlan({ cash: 480000, bills, incomes: [{ name: 'Payday', amount: 1050000, date: pd }, { name: 'Client', amount: 500000, date: jan10 }] }, NOW);
+  assert.deepEqual([p.billsTotal, p.coming, p.left, p.short], [850000, 1550000, 1180000, 0]);
+  assert.deepEqual(p.periods.map((q) => [q.start, q.end, q.safe, q.days]), [[480000, 230000, 230000, 6], [1280000, 680000, 450000, 46], [1180000, 1180000, 500000, 31]]);
+  assert.equal(p.perDayNow, 38333); assert.equal(p.periods.reduce((n, q) => n + q.safe, 0), p.left);
+  // a big bill after payday that payday can't cover is reserved from money now
+  const t = M.moneyPlan({ cash: 300000, bills: [{ name: 'Car', amount_cents: 1200000, due_at: dec1 }], incomes: [{ name: 'Payday', amount: 1000000, date: pd }] }, NOW);
+  assert.deepEqual([t.safeNow, t.periods[1].safe, t.left], [100000, 0, 100000]);
+  const s = M.moneyPlan({ cash: 100000, bills: [{ name: 'Rent', amount_cents: 300000, due_at: pd }] }, NOW); assert.deepEqual([s.left, s.short, s.safeNow], [-200000, 200000, 0]);
+  assert.equal(M.moneyPlan({ cash: null, bills }, NOW).left, null);
+});
+test('money coming from chat, with dates next year', () => {
+  const x = M.classifyItem('R5000 coming on 10 January from a client', NOW); assert.deepEqual([x.type, x.incoming, x.name, x.amount, new Date(x.date).getFullYear(), new Date(x.date).getMonth()], ['income', true, 'Client', 500000, 2027, 0]);
+  assert.deepEqual(['Sipho owes me R500 on the 30th', 'refund R450 on the 28th'].map((t) => [M.classifyItem(t, NOW).type, M.classifyItem(t, NOW).name]), [['income', 'From Sipho'], ['income', 'Refund']]);
+  assert.equal(M.classifyItem('I get paid on the 25th R10500', NOW).incoming, undefined);
+  assert.equal(new Date(M.classifyItem('send mom R1200 on the 25th of December', NOW).date).getMonth(), 11);
+});

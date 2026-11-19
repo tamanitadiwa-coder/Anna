@@ -216,6 +216,17 @@ export function carryForward(lines, nextItems = []) {
 const AMT_ALL = /(?:\bR\s?)?(\d{1,3}(?:[ , ]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(k\b|rand\b)?(?!\d|st\b|nd\b|rd\b|th\b)/gi;
 export function amountOf(t) { AMT_ALL.lastIndex = 0; const m = AMT_ALL.exec(t); if (!m) return null; let c = Number(m[1].replace(/[ , ]/g, '')) * 100 + (m[2] ? Number(m[2].padEnd(2, '0')) : 0); if (m[3] && /k/i.test(m[3])) c *= 1000; return { cents: c, text: m[0] }; }
 const DATE_RE = /\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b(?:\s+of\s+[a-z]+)?|\bon\s+the\s+(\d{1,2})\b/i;
+// "10 January", "the 3rd of Feb 2027", "January 10": a full date (rolled to next year if it has passed)
+const MON = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+const MDATE_RE = new RegExp(`\\b(?:on\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${MON})\\.?(?:,?\\s+(20\\d\\d))?\\b|\\b(?:on\\s+)?(${MON})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d\\d))?\\b`, 'i');
+const MONS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export function dateIn(s, now = Date.now()) {
+  const m = s.match(MDATE_RE);
+  if (m) { const day = Number(m[1] || m[5]), mon = MONS.indexOf((m[2] || m[4]).slice(0, 3).toLowerCase()), yr = m[3] || m[6], d = new Date(now), today = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    let t = new Date(yr ? Number(yr) : d.getFullYear(), mon, day, 12); if (!yr && t < today) t = new Date(d.getFullYear() + 1, mon, day, 12); return { date: t.getTime(), text: m[0] }; }
+  const dm = s.match(DATE_RE); return dm ? { date: nextDayOfMonth(Number(dm[1] || dm[2]), now), text: dm[0] } : null;
+}
+const noDate = (s) => { const m = s.match(MDATE_RE) || s.match(DATE_RE); return m ? s.replace(m[0], ' ') : s; };
 // next date with this day of the month (today counts), as local noon
 export function nextDayOfMonth(day, now = Date.now()) { const d = new Date(now); let t = new Date(d.getFullYear(), d.getMonth(), day, 12); if (t.getDate() !== day || new Date(d.getFullYear(), d.getMonth(), d.getDate()) > t) t = new Date(d.getFullYear(), d.getMonth() + 1, day, 12); return t.getTime(); }
 export const daysUntil = (t, now = Date.now()) => { const a = new Date(now), b = new Date(t); return Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / 864e5); };
@@ -225,15 +236,17 @@ function splitItems(text) {
   const out = [];
   for (const sent of String(text).split(/(?<=[.!?;])\s+|\n+/)) for (const part of sent.split(/\s*,(?!\d)\s*|\s+plus\s+/i)) {
     const ands = part.split(/\s+and\s+(?:also\s+)?/i);
-    if (ands.length > 1 && ands.every((p) => amountOf(p.replace(DATE_RE, '')))) out.push(...ands); else out.push(part);
+    if (ands.length > 1 && ands.every((p) => amountOf(noDate(p)))) out.push(...ands); else out.push(part);
   }
   return out.map((s) => s.replace(/^[\s.,!?;]+|[\s.,!?;]+$/g, '').replace(/^(?:plus|and|also|then)\s+/i, '')).filter(Boolean);
 }
 // One item: { type: balance | planned | debt | income | expense | unknown, name, amount (cents|null), date (ts|null), person, text }
 export function classifyItem(s, now = Date.now()) {
-  const lo = s.toLowerCase(), dm = s.match(DATE_RE), date = dm ? nextDayOfMonth(Number(dm[1] || dm[2]), now) : null, rest = dm ? s.replace(dm[0], ' ') : s, a = amountOf(rest), amount = a ? a.cents : null, bare = a ? rest.replace(a.text, ' ') : rest;
+  const lo = s.toLowerCase(), dm = dateIn(s, now), date = dm ? dm.date : null, rest = dm ? s.replace(dm.text, ' ') : s, a = amountOf(rest), amount = a ? a.cents : null, bare = a ? rest.replace(a.text, ' ') : rest;
   let m;
   if (/\b(get(?:ting)? paid|paid on|payday|pay ?day|salary|wages? (?:come|comes|in)|get my pay)\b/.test(lo)) return { type: 'income', name: /salary/.test(lo) ? 'Salary' : 'Pay', amount, date, text: s };
+  if ((m = s.match(/\b([A-Z][\w'-]*)\s+(?:owes|will pay|is paying|pays)\s+me\b/)) || (m = s.match(/\b(?:from|by)\s+([A-Za-z][\w'-]*)\s*$/)) && /\b(coming|expect|receive|getting|get)\b/.test(lo)) { const p = cap(m[1]); return { type: 'income', incoming: true, name: `From ${p}`, amount, date, text: s }; }
+  if (/\b(coming(?!\s+up)|expecting|i expect|will (?:get|receive)|receiving|getting paid for|refund)\b/.test(lo)) return { type: 'income', incoming: true, name: nameOf(bare.replace(/\b(?:coming in|money coming|is coming|coming|expecting|expect|will get|will receive|receiving|getting paid for|from|in)\b/gi, ' ')) || 'Money coming', amount, date, text: s };
   if ((m = s.match(/\b(?:i\s+)?(?:still\s+)?(?:owe|owing)\s+([A-Z]?[a-z][\w'-]*)/i)) || (m = s.match(/\bborrowed\s+(?:\S+\s+)?from\s+([A-Za-z][\w'-]*)/i))) { const p = cap(m[1]); return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
   if (/\b(want(?:s)? to buy|wanna buy|would like to buy|i'd like to buy|thinking (?:of|about) buying|wish(?:ing)? i could buy|planning to buy)\b/.test(lo)) return { type: 'wish', name: nameOf(bare.replace(/^.*?\b(?:buy|buying)\b/i, '')) || 'Something', amount, date, text: s };
   if (/\b(spent|bought|paid for)\b/.test(lo)) { const e = parseEntry(s); return { type: 'expense', name: e?.category || nameOf(bare.replace(/\b(spent|bought|on)\b/gi, ' ')) || 'Other', amount, date, text: s }; }
@@ -271,11 +284,33 @@ export function cashPlanText(p) {
 // ================= v1.2: the simple Money view =================
 // cash = money now (cents); bills = all bills (unpaid ones count); payday = { amount, date } or null; wishes = [{ name, price }]
 // Buffer: 10% of what is needed, rounded up to R50. Safe per day = (cash − unpaid due before payday) ÷ days to payday (or month end).
-export function moneyToday({ cash, bills = [], payday = null, wishes = [] }, now = Date.now()) {
+export function moneyToday({ cash, bills = [], payday = null, wishes = [], incomes = null }, now = Date.now()) {
   const order = payOrder(bills, cash), d = new Date(now), end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12).getTime(), until = payday ? payday.date : end;
   const days = Math.max(0, daysUntil(until, now)), dueBefore = order.rows.filter((b) => !b.due_at || daysUntil(b.due_at, now) <= days).reduce((n, b) => n + b.amount_cents, 0);
   const left = cash == null ? null : cash - dueBefore, perDay = left == null ? null : days > 0 ? Math.floor(Math.max(0, left) / days) : Math.max(0, left);
   const buffer = order.total ? Math.ceil((order.total * 0.1) / 5000) * 5000 : 0, needed = order.total + buffer, gap = cash == null ? null : needed - cash, spare = cash == null ? null : cash - needed;
   const wish = wishes.map((w) => ({ ...w, status: spare != null && w.price <= spare ? 'now' : payday && spare != null && w.price <= spare + payday.amount ? 'payday' : 'later' }));
-  return { cash, days, until, payday, left, perDay, order, buffer, needed, gap, spare, wishes: wish };
+  return { cash, days, until, payday, left, perDay, order, buffer, needed, gap, spare, wishes: wish, plan: moneyPlan({ cash, bills, incomes: incomes || (payday ? [{ name: 'Payday', ...payday }] : []) }, now) };
+}
+
+// v1.3: the main Money card. Walks the timeline: money now, bills by due date, money coming in.
+// A bill due on or before an income date is paid from the money you have before it.
+// Period 0 = now → first income; period k starts when income k lands. safe[k] = what you can spend in that period
+// while every later bill is still covered (greedy: earlier periods first). left = cash + all incoming − all unpaid bills.
+export function moneyPlan({ cash, bills = [], incomes = [] }, now = Date.now()) {
+  const unpaid = bills.filter((b) => !b.paid), billsTotal = unpaid.reduce((n, b) => n + b.amount_cents, 0);
+  const inc = incomes.filter((x) => x.amount > 0 && x.date && daysUntil(x.date, now) >= 0).sort((a, b) => a.date - b.date), coming = inc.reduce((n, x) => n + x.amount, 0);
+  const d = new Date(now), monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12).getTime();
+  const oneMonthOn = (t) => { const a = new Date(t); return new Date(a.getFullYear(), a.getMonth() + 1, a.getDate(), 12).getTime(); };
+  const starts = [now, ...inc.map((x) => x.date)], ends = [...inc.map((x) => x.date), inc.length ? oneMonthOn(inc[inc.length - 1].date) : monthEnd];
+  const dayOf = (b) => (b.due_at ? Math.max(0, daysUntil(b.due_at, now)) : 0);
+  let bal = cash ?? 0; const periods = starts.map((st, k) => {
+    const from = k ? daysUntil(st, now) : -Infinity, to = k < inc.length ? daysUntil(inc[k].date, now) : Infinity;
+    const due = unpaid.filter((b) => dayOf(b) > from && dayOf(b) <= to).sort((a, b) => (a.due_at || 0) - (b.due_at || 0)), dueTotal = due.reduce((n, b) => n + b.amount_cents, 0);
+    if (k) bal += inc[k - 1].amount; const start = bal; bal -= dueTotal;
+    return { k, income: k ? inc[k - 1] : null, start, bills: due, dueTotal, end: bal, days: Math.max(0, daysUntil(ends[k], now) - Math.max(0, daysUntil(st, now))) };
+  });
+  let used = 0; for (const p of periods) { const low = Math.min(...periods.slice(p.k).map((q) => q.end)); p.safe = cash == null ? null : Math.max(0, low - used); if (p.safe != null) used += p.safe; p.perDay = p.safe == null ? null : p.days > 0 ? Math.floor(p.safe / p.days) : p.safe; }
+  const left = cash == null ? null : cash + coming - billsTotal, low = Math.min(...periods.map((p) => p.end));
+  return { cash, billsTotal, coming, incomes: inc, left, periods, safeNow: periods[0].safe, perDayNow: periods[0].perDay, daysNow: periods[0].days, short: cash != null && low < 0 ? -low : 0 };
 }
