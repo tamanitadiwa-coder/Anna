@@ -28,7 +28,11 @@ try {
   const st = await S(() => ({ bills: window.__anna.S.bills.map((b) => [b.name, b.amount_cents, b.kind]), fin: window.__anna.life.finance.map((x) => [x.id, x.balance || x.amount]) }));
   R.ok(JSON.stringify(st.bills.map((b) => b[0]).sort()) === JSON.stringify(['Ashraf (debt)', 'Birthday', 'House deposit', 'Mom']) && st.bills.some((b) => b[0] === 'Ashraf (debt)' && b[2] === 'debt') && st.fin.some((f) => f[0] === 'cash' && f[1] === 410000) && st.fin.some((f) => f[0] === 'payday' && f[1] === 1050000), 'saved to the right stores: bills, debt, balance, payday', JSON.stringify(st));
   await page.evaluate(() => document.querySelector('[data-act="close"]')?.click()); await page.waitForTimeout(300); await page.click('#tabs [data-tab="money"]');
-  const card = nb(await page.locator('#payday').innerText()); R.ok(/Left until payday: R 800,00/.test(card) && /6 days until payday/.test(card), 'Money shows the stats with no manual entry', card);
+  await page.click('[data-act="mmore"]').catch(() => {}); const card = nb(await page.locator('#today').innerText()), pf = nb(await page.locator('#payfirst').innerText());
+  R.ok(/R 4 100,00/.test(card) && /Days to payday\s*6/.test(card) && /Safe per day\s*R 133,33/.test(card), 'Today card: money now, days to payday, safe per day', card);
+  R.ok(/House deposit[\s\S]*Ashraf \(debt\)[\s\S]*Birthday[\s\S]*Mom/.test(pf) && /R 3 300,00/.test(pf) && !/runs out/.test(pf), 'Pay first: priority then due date, running total', pf);
+  R.ok(/You’re covered, R 450,00 spare/.test(nb(await page.locator('#stable').innerText())), 'To be stable: covered with buffer', await page.locator('#stable').innerText());
+  await page.click('[data-act="mmore"]');
   await page.click('#tabs [data-tab="home"]'); await page.click('.ask'); await page.click('[data-act="ent-undo"]'); await page.waitForTimeout(400);
   R.ok((await S(() => window.__anna.S.bills.length)) === 0 && !(await S(() => window.__anna.life.finance.some((x) => x.id === 'cash' || x.id === 'payday'))), 'Undo removes them all');
   // auto-save setting (off by default)
@@ -36,6 +40,21 @@ try {
   R.ok((await page.locator('[data-act="automoney"]:not(.on)').count()) === 1, 'Auto-save setting exists and is off by default'); await page.click('[data-act="automoney"]');
   await page.click('#tabs [data-tab="home"]'); await page.click('.ask'); r = await say("There's R2000 and I owe Sipho R300"); await page.waitForTimeout(500); r = await last();
   R.ok(/^Saved 2 items/.test(r) && /Left until payday: R 1 700,00/.test(r) && (await page.locator('[data-act="ent-undo"]').count()) >= 1, 'auto-save on: saved straight away, Undo available', r);
+  // simple Money view, everything told to ANNA (auto-save is on now)
+  for (const t of ['I want to buy a new phone for R3000', 'thinking of buying sneakers R300']) await say(t);
+  R.ok(/New phone: Not yet/.test(await last()) === false && /Sneakers: Can buy now/.test(await last()), 'wishlist from chat with a status', await last());
+  await say('I get paid on the 25th R10500'); await say('spent R200 on food'); await say('need to pay R5000 car repair');
+  await page.evaluate(() => document.querySelector('[data-act="close"]')?.click()); await page.waitForTimeout(200); await page.click('#tabs [data-tab="money"]');
+  const today = nb(await page.locator('#today').innerText()), pay = nb(await page.locator('#payfirst').innerText()), stable = nb(await page.locator('#stable').innerText()), wish = nb(await page.locator('#wishes').innerText()), bought = nb(await page.locator('#bought').innerText());
+  R.ok(/R 1 800,00/.test(today) && /Days to payday\s*6/.test(today) && /Safe per day\s*R 0,00/.test(today), 'Today: R1 800 now, 6 days, nothing safe to spend', today);
+  R.ok(/^Money runs out here[\s\S]*Car repair[\s\S]*due 25 Nov[\s\S]*Sipho \(debt\)[\s\S]*R 5 300,00/.test(pay), 'Pay first shows where the money runs out', pay);
+  R.ok(/You need R 4 050,00 more/.test(stable) && /R 5 300,00 \+ R 550,00 buffer = R 5 850,00/.test(stable), 'To be stable: you need R X more (with buffer)', stable);
+  R.ok(/New phone[\s\S]*Wait until 25 Nov[\s\S]*R 3 000,00/.test(wish) && /Sneakers/.test(wish), 'Want to buy: wait until payday', wish);
+  R.ok(/Food[\s\S]*R 200,00[\s\S]*Total\s*R 200,00/.test(bought), 'Bought this month with total', bought);
+  R.ok(!(await page.locator('#screen .donutw, #screen .bars').count()), 'no charts unless More details is open');
+  await page.click('#payfirst .prow:has-text("Sipho")'); await page.waitForTimeout(300);
+  R.ok(!/Sipho/.test(await page.locator('#payfirst').innerText()) && /R 1 500,00/.test(nb(await page.locator('#today').innerText())), 'tap to mark paid (money now updates)');
+  await page.click('[data-act="chat-open"]'); R.ok(await page.locator('.chatin textarea').count() === 1, '+ Tell ANNA opens the chat');
   R.ok(!errors.length, 'no JavaScript errors', errors.join(' | '));
 } catch (e) { R.ok(false, 'unexpected error', e.stack); }
 try { await ctx.close(); } catch {} srv.close(); rmSync(dir, { recursive: true, force: true }); process.exit(R.finish() ? 0 : 1);

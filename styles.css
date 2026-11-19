@@ -197,3 +197,7 @@ img,svg{-webkit-user-drag:none;-webkit-touch-callout:none}
 .bline{display:grid;grid-template-columns:1fr 112px 44px;gap:8px;align-items:center;margin:0 0 8px}.bline input{min-height:44px;padding:10px 12px}
 .bline input[data-bl="amt"]{text-align:right}input.bad{outline-color:rgba(255,156,143,.7)}
 .calcres{font:300 24px/1.25 var(--brand);color:var(--soft);overflow-wrap:anywhere}
+/* v1.2 simple Money view */
+.prow{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 0;border-bottom:1px solid var(--line)}.prow:last-child{border-bottom:0}.prow .amt{text-align:right}
+.runout{margin:8px 0 2px;padding:6px 10px;border-radius:10px;border:1px dashed rgba(255,120,120,.5);color:#FFB4B4;font-size:13px;text-align:center}
+.bignum{font:300 26px/1.2 var(--brand);margin:2px 0 6px;color:var(--ink)}.bignum.over{color:#FFB4B4}.bignum.pos{color:#A9DFFF}

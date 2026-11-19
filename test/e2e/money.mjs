@@ -10,7 +10,7 @@ const amt = async (name, v) => { const i = page.locator(`.bline:has(input[data-b
 const nb = (s) => s.replace(/[  ]/g, ' ');
 const say = async (t) => { await page.fill('.chatin textarea', t); await page.click('#send'); await page.waitForTimeout(250); return nb(await page.evaluate(() => window.__anna.S.chat.at(-1).content)); };
 try {
-  await open(); await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="open"][data-id="mbudget"]');
+  await open(); await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="mmore"]'); await page.click('[data-act="open"][data-id="mbudget"]');
   for (const [n, v] of [['Monthly income', '15 000'], ['Rent / bond', '5000'], ['Food & groceries', '2 000'], ['Transport', '1000'], ['Electricity', '800']]) await amt(n, v);
   await page.click('[data-act="b-add"]'); const nameIn = page.locator('input[data-bl="name"]').filter({ hasText: '' }).last(); await page.locator('.bline input[data-bl="name"][value="New bill"]').fill('Other');
   await page.locator('.bline').filter({ has: page.locator('[data-act="b-del"]') }).locator('input[data-bl="amt"]').fill('700');

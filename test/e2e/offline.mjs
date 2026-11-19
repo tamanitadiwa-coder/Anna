@@ -55,7 +55,7 @@ try {
   r = await say('How many hours did staff work this week?'); R.ok(/Thandi/.test(r), 'timesheets offline');
   r = await say('books day'); await page.waitForTimeout(200); R.ok(/income/i.test(await last()), 'Books Day offline'); await say('stop');
   r = await say('What is the latest news?'); R.ok(/needs internet/.test(r), 'research: says it needs internet, nothing faked', r);
-  await close(); await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="open"][data-id="mbudget"]'); R.ok(/Remaining/.test(await page.locator('#bres').innerText()), 'monthly calculator offline'); await close();
+  await close(); await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="mmore"]'); await page.click('[data-act="open"][data-id="mbudget"]'); R.ok(/Remaining/.test(await page.locator('#bres').innerText()), 'monthly calculator offline'); await close();
   await page.click('#tabs [data-tab="brain"]'); await page.click('[data-act="bview"][data-id="journal"]'); await page.click('[data-act="open"][data-id="journal"]'); await page.fill('[name="text"]', 'Offline entry'); await submit(); await page.waitForTimeout(200);
   R.ok((await counts()).journal === 2, 'journal offline');
   // backup round trip (offline too)

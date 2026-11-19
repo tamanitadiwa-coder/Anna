@@ -235,18 +235,19 @@ export function classifyItem(s, now = Date.now()) {
   let m;
   if (/\b(get(?:ting)? paid|paid on|payday|pay ?day|salary|wages? (?:come|comes|in)|get my pay)\b/.test(lo)) return { type: 'income', name: /salary/.test(lo) ? 'Salary' : 'Pay', amount, date, text: s };
   if ((m = s.match(/\b(?:i\s+)?(?:still\s+)?(?:owe|owing)\s+([A-Z]?[a-z][\w'-]*)/i)) || (m = s.match(/\bborrowed\s+(?:\S+\s+)?from\s+([A-Za-z][\w'-]*)/i))) { const p = cap(m[1]); return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
+  if (/\b(want(?:s)? to buy|wanna buy|would like to buy|i'd like to buy|thinking (?:of|about) buying|wish(?:ing)? i could buy|planning to buy)\b/.test(lo)) return { type: 'wish', name: nameOf(bare.replace(/^.*?\b(?:buy|buying)\b/i, '')) || 'Something', amount, date, text: s };
   if (/\b(spent|bought|paid for)\b/.test(lo)) { const e = parseEntry(s); return { type: 'expense', name: e?.category || nameOf(bare.replace(/\b(spent|bought|on)\b/gi, ' ')) || 'Other', amount, date, text: s }; }
   if (/\b(need to|have to|must|got to|gotta|going to|send|pay|deposit|transfer|set aside|put aside)\b/.test(lo)) return { type: 'planned', name: nameOf(bare.replace(/\b(send|pay|transfer|set aside|put aside)\b/gi, ' ')) || 'Payment', amount, date, text: s };
   if (/\b(there'?s|there is|i have|i've got|i got|balance|in (?:my|the) (?:account|bank)|left)\b/.test(lo) && amount) return { type: 'balance', name: 'Current balance', amount, date, text: s };
   if (/^\s*(?:r\s?)?\d[\d\s,.]*k?\s*(?:rand\s*)?for\s+/i.test(rest)) return { type: 'planned', name: nameOf(bare.replace(/^\s*for\s+/i, '')) || 'Payment', amount, date, text: s };
   return { type: 'unknown', name: nameOf(bare) || 'Item', amount, date, text: s };
 }
-export const ITEM_LABEL = { balance: 'Balance', planned: 'Planned payment', debt: 'Debt', income: 'Income', expense: 'Expense', unknown: 'Not sure' };
+export const ITEM_LABEL = { wish: 'Want to buy', balance: 'Balance', planned: 'Planned payment', debt: 'Debt', income: 'Income', expense: 'Expense', unknown: 'Not sure' };
 // The whole message → items (with amounts) + questions (items without an amount). null when it's not a many-item money message.
 export function parseItems(text, now = Date.now()) {
   const items = splitItems(text).map((s) => classifyItem(s, now)).filter((x) => x.amount || x.name.length > 2);
   const withAmt = items.filter((x) => x.amount), need = items.filter((x) => !x.amount && x.type !== 'balance');
-  const strong = withAmt.some((x) => ['balance', 'debt', 'planned'].includes(x.type) || (x.type === 'income' && x.date));
+  const strong = withAmt.some((x) => ['balance', 'debt', 'planned', 'wish'].includes(x.type) || (x.type === 'income' && x.date));
   if (withAmt.length < 2 && !strong) return null;
   return { items: withAmt, ask: need.filter((x) => /^[a-z]/i.test(x.name)).map((x) => ({ ...x, type: 'planned', setAside: true })) };
 }
@@ -265,4 +266,16 @@ export function cashPlanText(p) {
   if (p.income) L.push(`Next income: ${money(p.income.amount)}${p.income.date ? ' on ' + new Date(p.income.date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long' }) : ''}.`);
   if (p.minus) L.push(`⚠ That’s ${money(-p.left)} in the minus before payday. Options: pay part of a debt later, or move a planned payment to after payday. You decide.`);
   return L;
+}
+
+// ================= v1.2: the simple Money view =================
+// cash = money now (cents); bills = all bills (unpaid ones count); payday = { amount, date } or null; wishes = [{ name, price }]
+// Buffer: 10% of what is needed, rounded up to R50. Safe per day = (cash − unpaid due before payday) ÷ days to payday (or month end).
+export function moneyToday({ cash, bills = [], payday = null, wishes = [] }, now = Date.now()) {
+  const order = payOrder(bills, cash), d = new Date(now), end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12).getTime(), until = payday ? payday.date : end;
+  const days = Math.max(0, daysUntil(until, now)), dueBefore = order.rows.filter((b) => !b.due_at || daysUntil(b.due_at, now) <= days).reduce((n, b) => n + b.amount_cents, 0);
+  const left = cash == null ? null : cash - dueBefore, perDay = left == null ? null : days > 0 ? Math.floor(Math.max(0, left) / days) : Math.max(0, left);
+  const buffer = order.total ? Math.ceil((order.total * 0.1) / 5000) * 5000 : 0, needed = order.total + buffer, gap = cash == null ? null : needed - cash, spare = cash == null ? null : cash - needed;
+  const wish = wishes.map((w) => ({ ...w, status: spare != null && w.price <= spare ? 'now' : payday && spare != null && w.price <= spare + payday.amount ? 'payday' : 'later' }));
+  return { cash, days, until, payday, left, perDay, order, buffer, needed, gap, spare, wishes: wish };
 }

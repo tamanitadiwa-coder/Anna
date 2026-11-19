@@ -59,7 +59,7 @@ try {
   R.ok(await page.locator('.presence .orb[data-s="off"]').count() === 1 && /not available|not installed/.test(await page.locator('#pstatus').innerText()), 'Home: central orb resting, honest status (no WebGPU here: AI brain not available)');
   R.ok(await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(0, 0, 0)', 'pure black background');
   await page.click('#awake'); await page.waitForTimeout(300); R.ok(/not available|Download/.test(await page.locator('#toast').innerText()), 'awake toggle explains why the AI cannot start here', await page.locator('#toast').innerText()); await tabTo('home');
-  await tabTo('money'); R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)'); await tabTo('home');
+  await tabTo('money'); await page.click('[data-act="mmore"]'); R.ok((await page.locator('#mmore .hero .big').innerText()).replace(/\s/g, ' ') === 'R 0,00', 'ZAR is the default currency (R 0,00)'); await tabTo('home');
     for (const t of ['home', 'tasks', 'money', 'biz', 'brain']) { await tabTo(t); R.ok(await page.locator('#screen h1').count() === 1, `tab "${t}" renders`); await layoutOk(`tab ${t}`); }
   await page.click('.top [data-tab="data"]'); R.ok(/Data & settings/.test(await page.locator('h1').innerText()), 'Settings opens from the gear button'); await layoutOk('settings');
   // ---------- tasks ----------
@@ -104,7 +104,7 @@ try {
   await fill({ amount: '1 250,50', note: 'Checkers' }); await submit();
   await page.click('[data-act="open"][data-id="tx"]'); await fill({ kind: 'income', amount: '18000', category: 'Salary' }); await submit();
   s = await S(); R.ok(s.tx.length === 2 && s.tx[0].amount_cents === 125050, 'record expense (comma decimal) and income');
-  R.ok((await page.locator('.hero .big').innerText()).replace(/\s/g, ' ') === 'R 16 749,50', 'net this month correct (R 16 749,50)', await page.locator('.hero .big').innerText());
+  R.ok((await page.locator('#mmore .hero .big').innerText()).replace(/\s/g, ' ') === 'R 16 749,50', 'net this month correct (R 16 749,50)', await page.locator('#mmore .hero .big').innerText());
   R.ok(await page.locator('.donutw', { hasText: 'Groceries' }).count() === 1, 'spending breakdown shows the category');
   await page.click('.item .grow >> text=Groceries'); R.ok(await page.inputValue('#sheet [name="amount"]') === '1250.50', 'edit entry pre-fills amount'); await fill({ amount: '1300' }); await submit();
   s = await S(); R.ok(s.tx.find((t) => t.category === 'Groceries').amount_cents === 130000, 'edit entry');
@@ -159,7 +159,7 @@ try {
   await page.evaluate(() => { window.__anna.S.chat.push({ role: 'user', content: 'Kept question', at: Date.now() }, { role: 'assistant', content: 'Kept answer', at: Date.now() }); });
   // ---------- settings ----------
   await page.click('.top [data-tab="data"]'); await page.fill('#nm', 'Tamani'); await page.click('[data-act="prefs"]'); await tabTo('home'); R.ok(/Tamani/.test(await page.locator('h1').innerText()), 'name preference shows in greeting');
-  await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', '$'); await page.click('[data-act="prefs"]'); await tabTo('money'); R.ok(/^\$/.test(await page.locator('.hero .big').innerText()), 'currency can be changed'); await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', 'R'); await page.click('[data-act="prefs"]');
+  await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', '$'); await page.click('[data-act="prefs"]'); await tabTo('money'); R.ok(/^\$/.test(await page.locator('#mmore .hero .big').innerText()), 'currency can be changed'); await page.click('.top [data-tab="data"]'); await page.selectOption('#cursel', 'R'); await page.click('[data-act="prefs"]');
   await tabTo('home'); await page.click('.top [data-tab="data"]'); await page.click('[data-act="diag"]'); await page.waitForFunction(() => /VERDICT/.test(document.querySelector('#diagout')?.textContent || ''), null, { timeout: 30000 });
   const dg = await page.locator('#diagout').innerText(); R.ok(/Database: indexeddb \(best\), read\/write OK/.test(dg) && /Internet: connected/.test(dg) && /AI engine cache WebLLM 0\.2\.87 \(1 file\)/.test(dg), 'diagnostics: database, internet and cached AI engine', dg.split('\n').slice(3, 7).join(' | '));
   R.ok(/Not fully ready.*Install the AI model/.test(dg), 'diagnostics verdict explains what is missing (no model yet)');

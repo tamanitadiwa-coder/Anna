@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -148,9 +148,17 @@ const screens = {
     if (parts.length > 5) { const rest = parts.slice(5).reduce((n, p) => n + p.value, 0); parts = [...parts.slice(0, 5), { label: 'Other', value: rest, color: '#3A3D43' }]; }
     const mo = six().map((x) => { const s = L.monthSummary(S, x.t); return { l: x.l, a: s.income, b: s.expense }; });
     const tx = [...S.tx].sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 40);
-    return top() + title('Finances', 'Money', 'Calm, clear and entirely private') +
+    const v = moneyView(), o = v.order, som = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime(), bought = S.tx.filter((t) => t.kind === 'expense' && t.occurred_at >= som).sort((a, b) => b.occurred_at - a.occurred_at), more = !!S.settings.moneyMore;
+    const kind = (b) => (b.kind === 'debt' ? 'Debt' : b.kind === 'planned' ? 'Planned' : 'Bill');
+    const simple = `<div class="hero" id="today"><div class="k">Money now</div><div class="big">${v.cash == null ? '—' : money(v.cash)}</div><div class="pills"><div class="pill"><span>${v.payday ? 'Days to payday' : 'Days to month end'}</span><b>${v.days}</b></div><div class="pill"><span>Safe per day</span><b>${v.perDay == null ? '—' : money(v.perDay)}</b></div></div>${v.cash == null ? '<div class="mute">Tell ANNA how much you have right now.</div>' : ''}</div>
+      ${o.rows.length ? sh('Pay first') + `<div class="card" id="payfirst">${o.rows.map((b, i) => `${i === o.runsOutAt ? '<div class="runout">Money runs out here</div>' : ''}<div class="prow" data-act="pay" data-id="${b.id}"><div class="grow"><b>${esc(b.name)}</b><div class="mute">P${b.priority || 2} · ${kind(b)} · due ${dstr(b.due_at)}</div></div><div class="amt"><b>${money(b.amount_cents)}</b><div class="mute">${money(b.running)}</div></div></div>`).join('')}<div class="mute" style="margin-top:6px">Tap one to mark it paid.</div></div>` : ''}
+      ${sh('To be stable')}<div class="card" id="stable">${v.cash == null ? '<div class="mute">Tell ANNA how much you have to see this.</div>' : `<div class="bignum ${v.gap > 0 ? 'over' : 'pos'}">${v.gap > 0 ? `You need ${money(v.gap)} more` : `You’re covered, ${money(-v.gap)} spare`}</div><div class="mute">Everything unpaid ${money(o.total)} + ${money(v.buffer)} buffer = ${money(v.needed)}</div>`}</div>
+      ${v.wishes.length ? sh('Want to buy') + `<div class="card" id="wishes">${v.wishes.map((w) => `<div class="prow"><div class="grow"><b>${esc(w.name)}</b><div class="${w.status === 'now' ? 'pos' : 'mute'}">${wishLabel(w)}</div></div><b>${money(w.price)}</b><button class="ib" data-act="wish-del" data-id="${w.id}" aria-label="Remove ${esc(w.name)}">${ic('x')}</button></div>`).join('')}</div>` : ''}
+      ${bought.length ? sh('Bought this month') + `<div class="card" id="bought">${bought.slice(0, 30).map((t) => `<div class="prow"><div class="grow">${esc(t.category)}<div class="mute">${dstr(t.occurred_at)}</div></div><b>${money(t.amount_cents)}</b></div>`).join('')}<div class="prow"><b class="grow">Total</b><b>${money(bought.reduce((n, t) => n + t.amount_cents, 0))}</b></div></div>` : ''}
+      <div class="adds"><button class="btn" data-act="chat-open">＋ Tell ANNA</button></div>
+      <div class="adds"><button class="btn sage" data-act="mmore">${more ? 'Hide details' : 'More details'}</button></div>`;
+    return top() + title('Finances', 'Money', 'Calm, clear and entirely private') + simple + (!more ? '' : '<div id="mmore">' +
       `<div class="hero"><div class="k">Net this month</div><div class="big">${money(m.net)}</div><div class="pills"><div class="pill"><span>Income</span><b>${money(m.income)}</b></div><div class="pill"><span>Expenses</span><b>${money(m.expense)}</b></div></div></div>
-      ${(() => { M.setCurrency(curCode()); const p = cashPlanStored(); return p ? `<div class="card" id="payday"><b>Until payday</b>${M.cashPlanText(p).map((l) => `<div class="${l.startsWith('⚠') ? 'over' : 'mute'}">${esc(l)}</div>`).join('')}</div>` : ''; })()}
       <div class="card row" style="gap:12px"><div class="grow"><b>Books Day · the 25th</b><div class="mute">${booksStateGet().closed?.includes(M.booksMonth()) ? 'This month is closed.' : 'Close the month with ANNA, one question at a time.'}</div></div><button class="btn sm" data-act="books-remind">Remind me</button></div>
       <div class="adds"><button class="btn" data-act="open" data-id="mbudget">Monthly calculator</button><button class="btn soft" data-act="open" data-id="calc">Calculator</button><button class="btn sage" data-act="open" data-id="afford">Can I afford it?</button></div>
       <div class="adds">${addBtn('tx', '＋ Entry')}${addBtn('bill', '＋ Bill', 'soft')}${addBtn('budget', '＋ Budget', 'sage')}</div>
@@ -159,7 +167,7 @@ const screens = {
       ${sh('Budgets')}${bs.map((b) => `<div class="card"><div class="row"><b class="grow tap" data-act="edit" data-k="budget" data-id="${b.id}">${esc(b.category)}</b><span class="${b.over ? 'over' : 'mute'}">${money(b.spent)} of ${money(b.limit_cents)}</span>${editBtn('budget', b.id)}${delBtn('budget', b.id)}</div><div class="bar ${b.over ? 'over' : ''}"><i style="width:${Math.min(100, Math.round((b.spent / b.limit_cents) * 100))}%"></i></div><div class="mute" style="margin-top:6px">${b.over ? `${money(-b.left)} over budget` : `${money(b.left)} left this month`}</div></div>`).join('') || `<div class="card">${empty('Set a monthly budget for a category to keep spending gentle.')}</div>`}
       ${sh('Bills to pay')}<div class="card">${bills.map((b) => `<div class="item"><div class="grow tap" data-act="edit" data-k="bill" data-id="${b.id}"><b>${esc(b.name)}</b> <span class="chip ${(b.priority || 2) === 1 ? 'gold' : ''}">P${b.priority || 2}</span><div class="mute">${b.due_at < SOD ? '<span class="over">Overdue</span> · ' : ''}Due ${dstr(b.due_at)} · unpaid${b.repeat_monthly ? ' · monthly' : ''}${b.last_paid_at ? ' · last paid ' + dstr(b.last_paid_at) : ''}</div></div><b>${money(b.amount_cents)}</b><button class="btn sage sm" data-act="pay" data-id="${b.id}">Paid</button>${delBtn('bill', b.id)}</div>`).join('') || empty('No unpaid bills.')}</div>
       ${paid.length ? sh('Recently paid') + `<div class="card">${paid.map((b) => `<div class="item"><div class="grow"><b>${esc(b.name)}</b><div class="mute">Paid ${dstr(b.paid_at)}</div></div><b>${money(b.amount_cents)}</b><button class="btn sage sm" data-act="unpay" data-id="${b.id}">Undo</button>${delBtn('bill', b.id)}</div>`).join('')}</div>` : ''}
-      ${sh('Transactions')}<div class="card">${tx.map((t) => `<div class="item"><div class="dot ${t.kind === 'income' ? '' : 'g'}">${ic('money')}</div><div class="grow tap" data-act="edit" data-k="tx" data-id="${t.id}"><b>${esc(t.category)}</b><div class="mute">${dstr(t.occurred_at)}${t.note ? ' · ' + esc(t.note) : ''}</div></div><b class="${t.kind === 'income' ? 'pos' : ''}">${t.kind === 'income' ? '+' : '−'}${money(t.amount_cents)}</b>${delBtn('tx', t.id)}</div>`).join('') || empty('No entries yet. Tap ＋ Entry to record income or an expense.')}</div>`;
+      ${sh('Transactions')}<div class="card">${tx.map((t) => `<div class="item"><div class="dot ${t.kind === 'income' ? '' : 'g'}">${ic('money')}</div><div class="grow tap" data-act="edit" data-k="tx" data-id="${t.id}"><b>${esc(t.category)}</b><div class="mute">${dstr(t.occurred_at)}${t.note ? ' · ' + esc(t.note) : ''}</div></div><b class="${t.kind === 'income' ? 'pos' : ''}">${t.kind === 'income' ? '+' : '−'}${money(t.amount_cents)}</b>${delBtn('tx', t.id)}</div>`).join('') || empty('No entries yet. Tap ＋ Entry to record income or an expense.')}</div>` + '</div>');
   },
   biz() {
     const b = L.businessSummary(S), mo = six().map((x) => { const s = L.businessSummary(S, x.t); return { l: x.l, a: s.revenue, b: s.expenses }; });
@@ -510,6 +518,8 @@ const actions = {
   'bat-save': () => batchSave(), 'bat-cancel': () => { pendingBatch = null; say('Okay, nothing saved.'); },
   'bat-del': (i) => { const b = pendingBatch; if (!b) return; b.items.splice(Number(i), 1); if (!b.items.length) { pendingBatch = null; return say('Okay, nothing saved.'); } say(batchText()); },
   'bat-edit': (i) => { const b = pendingBatch; if (!b) return; const [x] = b.items.splice(Number(i), 1); b.editing = true; paintChat(true); const ta = $('.chatin textarea'); if (ta && x) { ta.value = x.text; ta.focus(); } },
+  mmore: () => mutate(() => { S.settings.moneyMore = !S.settings.moneyMore; }, { close: false }),
+  'wish-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   automoney: () => mutate(() => { S.settings.autoMoney = !S.settings.autoMoney; }, { close: false }),
   'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; for (const f of u.fin || []) { LIFE.finance = LIFE.finance.filter((x) => x.id !== f.id).concat(f.prev ? [f.prev] : []); if (f.prev) await LF.put('finance', f.prev); else await LF.del('finance', f.id); } if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
   'books-start': () => { BK = { step: 0, month: M.booksMonth() }; booksAsk(); }, 'books-snooze': async () => { await booksState({ snoozeUntil: new Date().setHours(24, 0, 0, 0) }); say('Okay, I’ll ask again tomorrow.'); },
@@ -898,9 +908,10 @@ async function batchSave() {
   const b = pendingBatch; if (!b) return; pendingBatch = null; M.setCurrency(curCode());
   const now = Date.now(), items = b.items.map((x) => (x.type === 'unknown' ? { ...x, type: 'planned' } : x)), plan = M.cashPlan(items);
   const finIds = ['cash', 'payday'], before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: finIds.map((id) => ({ id, prev: LIFE.finance.find((x) => x.id === id) || null })) };
-  const pay = items.find((x) => x.type === 'income' && x.date), endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), due = (x) => x.date || pay?.date || endOfMonth, fin = [];
+  const pay = items.find((x) => x.type === 'income' && x.date) || moneyView().payday, endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), due = (x) => x.date || pay?.date || endOfMonth, fin = [];
   for (const x of items) {
-    if (x.type === 'balance') fin.push({ id: 'cash', type: 'cash', balance: x.amount, at: now });
+    if (x.type === 'wish') { const r = { id: 'wish-' + L.uid().slice(0, 8), type: 'wish', name: x.name, price: x.amount, at: now }; fin.push(r); before.fin.push({ id: r.id, prev: null }); }
+    else if (x.type === 'balance') fin.push({ id: 'cash', type: 'cash', balance: x.amount, at: now });
     else if (x.type === 'income' && x.date) fin.push({ id: 'payday', type: 'payday', amount: x.amount, date: x.date, name: x.name, at: now });
     else if (x.type === 'income') S.tx.push({ id: L.uid(), kind: 'income', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
     else if (x.type === 'expense') S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
@@ -911,14 +922,16 @@ async function batchSave() {
   const ok = (await kvGet('state'))?.bills?.length === S.bills.length && (await LF.loadAll()).finance.filter((y) => fin.some((r) => r.id === y.id)).length === fin.length;
   if (!ok) { S.tx = before.tx; S.bills = before.bills; await save(); return say('I couldn’t save that on this device. Nothing was changed.'); }
   const uid = L.uid(); entryUndo[uid] = before;
-  await say([`Saved ${items.length} ${items.length === 1 ? 'item' : 'items'}. Money now shows them.`, ...M.cashPlanText(plan)].join('\n'), { undo: uid });
+  const wv = moneyView().wishes.filter((w) => fin.some((r) => r.id === w.id)).map((w) => `${w.name}: ${wishLabel(w)}.`);
+  await say([`Saved ${items.length} ${items.length === 1 ? 'item' : 'items'}. Money now shows them.`, ...M.cashPlanText(plan), ...wv].join('\n'), { undo: uid });
 }
-// Money tab: the same plan from what is stored (balance − later spending − unpaid planned payments and debts, until payday)
-function cashPlanStored() {
-  const c = LIFE.finance.find((x) => x.id === 'cash'); if (!c) return null; const p = LIFE.finance.find((x) => x.id === 'payday');
-  const items = [{ type: 'balance', amount: c.balance }, ...S.tx.filter((t) => t.occurred_at > c.at).map((t) => ({ type: t.kind === 'income' ? 'balance' : 'expense', amount: t.amount_cents })), ...S.bills.filter((b) => !b.paid && (b.kind === 'planned' || b.kind === 'debt')).map((b) => ({ type: b.kind, amount: b.amount_cents })), ...(p && M.daysUntil(p.date) >= 0 ? [{ type: 'income', amount: p.amount, date: p.date }] : [])];
-  return M.cashPlan(items);
+// Money tab: money now = last balance you told ANNA ± money in/out recorded since; payday from what you said.
+function moneyView() {
+  const c = LIFE.finance.find((x) => x.id === 'cash'), p = LIFE.finance.find((x) => x.id === 'payday');
+  const cash = c ? c.balance + S.tx.filter((t) => t.occurred_at > c.at).reduce((n, t) => n + (t.kind === 'income' ? t.amount_cents : -t.amount_cents), 0) : null;
+  return M.moneyToday({ cash, bills: S.bills, payday: p && M.daysUntil(p.date) >= 0 ? { amount: p.amount, date: p.date } : null, wishes: LIFE.finance.filter((x) => x.type === 'wish').map((w) => ({ id: w.id, name: w.name, price: w.price })) });
 }
+const wishLabel = (w) => ({ now: 'Can buy now', payday: `Wait until ${dstr(moneyView().until)}`, later: 'Not yet' })[w.status];
 // chat questions about money/staff → exact answers from money.js
 function moneyReply(text) {
   if (/\bwhat (?:must|should|do) i pay first\b|\bwhich bills? (?:first|should i pay)|\bpay first\b|\bbills? (?:priority|order)\b/i.test(text)) return payFirstText();

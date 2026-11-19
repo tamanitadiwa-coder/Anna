@@ -15,7 +15,7 @@ const fin = () => S(() => window.__anna.life.finance);
 try {
   await open('2026-11-20T10:00:00+02:00');
   // a saved plan for this month: income 15 000, rent 5 000, food 2 000, savings 1 000
-  await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="open"][data-id="mbudget"]');
+  await page.click('#tabs [data-tab="money"]'); await page.click('[data-act="mmore"]'); await page.click('[data-act="open"][data-id="mbudget"]');
   for (const [n, v] of [['Monthly income', '15000'], ['Rent / bond', '5000'], ['Food & groceries', '2000'], ['Transport', '1000'], ['Electricity', '800']]) await page.locator(`.bline:has(input[data-bl="name"][value="${n}"]) input[data-bl="amt"]`).fill(v);
   await page.click('[data-act="b-save"]'); await page.waitForTimeout(300); await closeS();
   await page.click('#tabs [data-tab="home"]'); await page.click('.ask');

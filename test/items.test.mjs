@@ -31,3 +31,12 @@ test('types by keyword, minus warning, single entries left to the old parser', (
   const p = M.cashPlan(r.items, NOW); assert.equal(p.left, -70000); assert.match(M.cashPlanText(p).join(' '), /in the minus/);
   for (const s of ['spent R200 on food', 'got R500 extra', 'Rent R5000', 'cancelled Netflix']) assert.equal(M.parseItems(s, NOW), null, s);
 });
+test('wishlist keyword and the simple Money view numbers', () => {
+  assert.deepEqual(M.parseItems('I want to buy a new phone for R3000', NOW).items.map((x) => [x.type, x.name, x.amount]), [['wish', 'New phone', 300000]]);
+  assert.deepEqual(M.parseItems('thinking of buying sneakers R1 200', NOW).items.map((x) => [x.type, x.name, x.amount]), [['wish', 'Sneakers', 120000]]);
+  const pd = new Date(2026, 10, 25, 12).getTime();
+  const v = M.moneyToday({ cash: 410000, bills: [{ name: 'Mom', amount_cents: 120000, priority: 2, due_at: pd }, { name: 'Ashraf', amount_cents: 50000, priority: 1, due_at: pd }], payday: { amount: 1050000, date: pd }, wishes: [{ name: 'Phone', price: 300000 }, { name: 'Shoes', price: 100000 }, { name: 'Car', price: 5000000 }] }, NOW);
+  assert.deepEqual([v.days, v.left, v.perDay, v.buffer, v.gap], [6, 240000, 40000, 20000, -220000]);
+  assert.deepEqual(v.order.rows.map((r) => r.name), ['Ashraf', 'Mom']);
+  assert.deepEqual(v.wishes.map((w) => w.status), ['payday', 'now', 'later']);
+});
