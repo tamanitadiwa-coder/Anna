@@ -210,3 +210,59 @@ export function booksSummary(cur, prev) {
 export function carryForward(lines, nextItems = []) {
   return lines.filter((l) => !l.oneMonth).map((l) => ({ ...l, cents: l.id === 'extra' || l.kind === 'once' ? 0 : l.cents })).concat(nextItems.map((n, i) => ({ id: 'c-next' + i + Date.now().toString(36), name: n.name, kind: 'once', cents: n.amount })));
 }
+
+// ================= v1.1: messages with many money items (balance, planned payments, debts, payday, expenses) =================
+// Amounts: R / rand / k, spaces or commas as thousands. Ordinals (25th) are dates, never amounts.
+const AMT_ALL = /(?:\bR\s?)?(\d{1,3}(?:[ , ]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(k\b|rand\b)?(?!\d|st\b|nd\b|rd\b|th\b)/gi;
+export function amountOf(t) { AMT_ALL.lastIndex = 0; const m = AMT_ALL.exec(t); if (!m) return null; let c = Number(m[1].replace(/[ , ]/g, '')) * 100 + (m[2] ? Number(m[2].padEnd(2, '0')) : 0); if (m[3] && /k/i.test(m[3])) c *= 1000; return { cents: c, text: m[0] }; }
+const DATE_RE = /\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b(?:\s+of\s+[a-z]+)?|\bon\s+the\s+(\d{1,2})\b/i;
+// next date with this day of the month (today counts), as local noon
+export function nextDayOfMonth(day, now = Date.now()) { const d = new Date(now); let t = new Date(d.getFullYear(), d.getMonth(), day, 12); if (t.getDate() !== day || new Date(d.getFullYear(), d.getMonth(), d.getDate()) > t) t = new Date(d.getFullYear(), d.getMonth() + 1, day, 12); return t.getTime(); }
+export const daysUntil = (t, now = Date.now()) => { const a = new Date(now), b = new Date(t); return Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / 864e5); };
+const FILLER = /^(?:(?:and|plus|also|then|so|but|right now|now|i|i'm|im|i am|i'll|it's|its|it is|there's|there is|need to|have to|must|will|my|the|a|an|to|for|of|on|with|some|get|got|pay|send|owe|is|be)\b\s*)+/i;
+const nameOf = (s) => cap(String(s).trim().replace(/[.?!,]+$/, '').replace(FILLER, '').replace(/\b(?:for|to|of|on|the|my)\s*$/i, '').replace(/\s+/g, ' ').trim());
+function splitItems(text) {
+  const out = [];
+  for (const sent of String(text).split(/(?<=[.!?;])\s+|\n+/)) for (const part of sent.split(/\s*,(?!\d)\s*|\s+plus\s+/i)) {
+    const ands = part.split(/\s+and\s+(?:also\s+)?/i);
+    if (ands.length > 1 && ands.every((p) => amountOf(p.replace(DATE_RE, '')))) out.push(...ands); else out.push(part);
+  }
+  return out.map((s) => s.replace(/^[\s.,!?;]+|[\s.,!?;]+$/g, '').replace(/^(?:plus|and|also|then)\s+/i, '')).filter(Boolean);
+}
+// One item: { type: balance | planned | debt | income | expense | unknown, name, amount (cents|null), date (ts|null), person, text }
+export function classifyItem(s, now = Date.now()) {
+  const lo = s.toLowerCase(), dm = s.match(DATE_RE), date = dm ? nextDayOfMonth(Number(dm[1] || dm[2]), now) : null, rest = dm ? s.replace(dm[0], ' ') : s, a = amountOf(rest), amount = a ? a.cents : null, bare = a ? rest.replace(a.text, ' ') : rest;
+  let m;
+  if (/\b(get(?:ting)? paid|paid on|payday|pay ?day|salary|wages? (?:come|comes|in)|get my pay)\b/.test(lo)) return { type: 'income', name: /salary/.test(lo) ? 'Salary' : 'Pay', amount, date, text: s };
+  if ((m = s.match(/\b(?:i\s+)?(?:still\s+)?(?:owe|owing)\s+([A-Z]?[a-z][\w'-]*)/i)) || (m = s.match(/\bborrowed\s+(?:\S+\s+)?from\s+([A-Za-z][\w'-]*)/i))) { const p = cap(m[1]); return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
+  if (/\b(spent|bought|paid for)\b/.test(lo)) { const e = parseEntry(s); return { type: 'expense', name: e?.category || nameOf(bare.replace(/\b(spent|bought|on)\b/gi, ' ')) || 'Other', amount, date, text: s }; }
+  if (/\b(need to|have to|must|got to|gotta|going to|send|pay|deposit|transfer|set aside|put aside)\b/.test(lo)) return { type: 'planned', name: nameOf(bare.replace(/\b(send|pay|transfer|set aside|put aside)\b/gi, ' ')) || 'Payment', amount, date, text: s };
+  if (/\b(there'?s|there is|i have|i've got|i got|balance|in (?:my|the) (?:account|bank)|left)\b/.test(lo) && amount) return { type: 'balance', name: 'Current balance', amount, date, text: s };
+  if (/^\s*(?:r\s?)?\d[\d\s,.]*k?\s*(?:rand\s*)?for\s+/i.test(rest)) return { type: 'planned', name: nameOf(bare.replace(/^\s*for\s+/i, '')) || 'Payment', amount, date, text: s };
+  return { type: 'unknown', name: nameOf(bare) || 'Item', amount, date, text: s };
+}
+export const ITEM_LABEL = { balance: 'Balance', planned: 'Planned payment', debt: 'Debt', income: 'Income', expense: 'Expense', unknown: 'Not sure' };
+// The whole message → items (with amounts) + questions (items without an amount). null when it's not a many-item money message.
+export function parseItems(text, now = Date.now()) {
+  const items = splitItems(text).map((s) => classifyItem(s, now)).filter((x) => x.amount || x.name.length > 2);
+  const withAmt = items.filter((x) => x.amount), need = items.filter((x) => !x.amount && x.type !== 'balance');
+  const strong = withAmt.some((x) => ['balance', 'debt', 'planned'].includes(x.type) || (x.type === 'income' && x.date));
+  if (withAmt.length < 2 && !strong) return null;
+  return { items: withAmt, ask: need.filter((x) => /^[a-z]/i.test(x.name)).map((x) => ({ ...x, type: 'planned', setAside: true })) };
+}
+export const askAside = (name) => `How much do you want to set aside for your ${name.toLowerCase()}?`;
+// balance − planned payments − debts = left until payday; days, daily allowance, next income. Exact cents.
+export function cashPlan(items, now = Date.now()) {
+  const sum = (t) => items.filter((x) => x.type === t && x.amount).reduce((n, x) => n + x.amount, 0);
+  const balance = sum('balance'), planned = sum('planned'), debts = sum('debt'), spent = sum('expense'), inc = items.filter((x) => x.type === 'income' && x.amount).sort((a, b) => (a.date || 9e15) - (b.date || 9e15))[0] || null;
+  const left = balance - spent - planned - debts, days = inc?.date ? Math.max(0, daysUntil(inc.date, now)) : null, daily = days ? Math.floor(left / days) : null;
+  return { balance, planned, debts, spent, left, days, daily, income: inc, minus: left < 0 };
+}
+export function cashPlanText(p) {
+  if (!p.balance) return [];
+  const L = [`Left until payday: ${money(p.left)} (${[`${money(p.balance)} balance`, p.spent && `${money(p.spent)} spent`, p.planned && `${money(p.planned)} planned payments`, p.debts && `${money(p.debts)} debts`].filter(Boolean).join(' − ')}).`];
+  if (p.days != null) L.push(`${p.days} ${p.days === 1 ? 'day' : 'days'} until payday → ${p.days ? `${money(p.daily)} a day` : 'payday is today'}.`);
+  if (p.income) L.push(`Next income: ${money(p.income.amount)}${p.income.date ? ' on ' + new Date(p.income.date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long' }) : ''}.`);
+  if (p.minus) L.push(`⚠ That’s ${money(-p.left)} in the minus before payday. Options: pay part of a debt later, or move a planned payment to after payday. You decide.`);
+  return L;
+}

@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -27,7 +27,7 @@ async function kvSet(k, v) {
 function banner() { const b = $('#banner'); b.hidden = mode !== 'memory'; b.textContent = 'This browser is blocking storage (private mode?). Anna cannot save. Export a backup before closing.'; }
 
 let auth = null, bkKey = null, locked = true, started = false, logoUrl = null, hiddenAt = 0, lockMsg = '';
-let pendingEntry = null, entryUndo = {}, BK = null, lastRoute = 'qwen';
+let pendingEntry = null, pendingBatch = null, entryUndo = {}, BK = null, lastRoute = 'qwen';
 let bizView = 'overview', staffWeek = 0, calcTab = 'basic', CALC = {}, BD = null, AFF = { amount: '', what: '' };
 let pendingReminder = null, reminderPrefill = null, lastURL = '';
 let LIFE = LF.emptyLife(), brainView = 'journal', jQ = '', jTag = '', pendingRemember = null, checkinShown = false;
@@ -150,6 +150,7 @@ const screens = {
     const tx = [...S.tx].sort((a, b) => b.occurred_at - a.occurred_at).slice(0, 40);
     return top() + title('Finances', 'Money', 'Calm, clear and entirely private') +
       `<div class="hero"><div class="k">Net this month</div><div class="big">${money(m.net)}</div><div class="pills"><div class="pill"><span>Income</span><b>${money(m.income)}</b></div><div class="pill"><span>Expenses</span><b>${money(m.expense)}</b></div></div></div>
+      ${(() => { M.setCurrency(curCode()); const p = cashPlanStored(); return p ? `<div class="card" id="payday"><b>Until payday</b>${M.cashPlanText(p).map((l) => `<div class="${l.startsWith('⚠') ? 'over' : 'mute'}">${esc(l)}</div>`).join('')}</div>` : ''; })()}
       <div class="card row" style="gap:12px"><div class="grow"><b>Books Day · the 25th</b><div class="mute">${booksStateGet().closed?.includes(M.booksMonth()) ? 'This month is closed.' : 'Close the month with ANNA, one question at a time.'}</div></div><button class="btn sm" data-act="books-remind">Remind me</button></div>
       <div class="adds"><button class="btn" data-act="open" data-id="mbudget">Monthly calculator</button><button class="btn soft" data-act="open" data-id="calc">Calculator</button><button class="btn sage" data-act="open" data-id="afford">Can I afford it?</button></div>
       <div class="adds">${addBtn('tx', '＋ Entry')}${addBtn('bill', '＋ Bill', 'soft')}${addBtn('budget', '＋ Budget', 'sage')}</div>
@@ -203,6 +204,7 @@ const screens = {
         <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="lock">Lock now</button><button class="btn sage sm" data-act="open" data-id="chpw">Change password</button></div></div>
       <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
         <div class="row wrap"><button class="btn sm" data-act="logo-pick">${logoUrl ? 'Replace logo…' : 'Upload logo…'}</button>${logoUrl ? '<button class="btn sage sm" data-act="logo-reset">Reset to default</button>' : ''}</div><input id="logofile" type="file" accept="image/*" hidden></div>
+      <div class="card"><div class="swrow"><div class="grow"><b>Auto-save chat money entries (undo available)</b><div class="mute">Off: ANNA shows what she understood and waits for your tap.</div></div><button class="sw ${S.settings.autoMoney ? 'on' : ''}" data-act="automoney" aria-label="Auto-save chat money entries"></button></div></div>
       <div class="card"><h2>Web research</h2><div class="mute" style="margin:4px 0 8px">Not switched on. Questions about news, weather or other current events need a web search service you approve first. Until then ANNA says so and never guesses. Nothing leaves this device.</div><div class="mute">Options waiting for your approval:<br>• Tavily: 1,000 searches a month free, then about $0.008 each. Needs a Tavily API key.<br>• Brave Search API: about $5 per 1,000 searches, with a $5 monthly credit. Needs a Brave API key and a card on file.</div></div>
       <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
         <div class="row"><button class="btn grow" data-act="export">Export backup</button><button class="btn sage grow" data-act="import">Restore…</button></div><input id="file" type="file" accept="application/json,.json" hidden>
@@ -274,7 +276,8 @@ function chatMain() {
   const rem = pendingRemember ? `<div class="card" style="margin:4px 0"><div>${pendingRemember.style ? `Want me to remember that you prefer: <b>${esc(LF.STYLES.find(([k]) => k === pendingRemember.style)[1])}</b>?` : `Want me to remember this?<div class="mute" style="margin-top:4px">“${esc(pendingRemember.text.slice(0, 160))}”</div>`}</div><div class="row" style="margin-top:10px"><button class="btn sm" data-act="rem-yes">Yes, remember</button><button class="btn sm sage" data-act="rem-no">No</button></div></div>` : '';
   const ec = pendingEntry ? `<div class="card" style="margin:4px 0"><div class="row wrap"><button class="btn sm" data-act="ent-save">Save</button><button class="btn sm sage" data-act="ent-edit">Edit</button><button class="btn sm sage" data-act="ent-cancel">Cancel</button></div></div>` : '';
   const rq = pendingReminder?.ts ? `<div class="card" style="margin:4px 0"><div class="row wrap"><button class="btn sm" data-act="rq-save">Save in ANNA</button><button class="btn sm sage" data-act="rq-edit">Change…</button><button class="btn sm sage" data-act="rq-cancel">Cancel</button></div></div>` : '';
-  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}${rq}${ec}</div>`;
+  const bc = pendingBatch ? `<div class="card" style="margin:4px 0">${pendingBatch.items.map((x, i) => `<div class="item"><div class="grow">${esc(x.name)} <span class="mute">${esc(M.ITEM_LABEL[x.type])}</span></div><button class="btn sm sage" data-act="bat-edit" data-id="${i}">Edit item</button><button class="btn sm sage" data-act="bat-del" data-id="${i}">Remove item</button></div>`).join('')}<div class="row wrap" style="margin-top:6px"><button class="btn sm" data-act="bat-save">Save all</button><button class="btn sm sage" data-act="bat-cancel">Cancel</button></div></div>` : '';
+  return `${note}<div class="msgs" id="msgs">${S.chat.map(bubble).join('')}${sugg}${rem}${rq}${ec}${bc}</div>`;
 }
 function chatPanel() {
   const on = AI.ACCESS.filter(([k]) => S.settings.ai[k]).map(([, n]) => n), busy = AI.ai.busy;
@@ -305,6 +308,8 @@ function toolReply(text) {
   lastRoute = pendingReminder ? 'reminders' : 'finance';
   if (BK) { const r = booksAnswer(text); if (r) return r; }
   if (/^\s*(start )?books day\s*$/i.test(text)) { BK = { step: 0, month: M.booksMonth() }; setTimeout(() => booksAsk(), 0); return 'Let’s close the month.'; }
+  if (pendingBatch) { const r = batchAnswer(text); if (r) return r; }
+  if (!['reminders', 'calc', 'staff', 'memory', 'journal', 'research'].includes(RT.route(text))) { const mb = M.parseItems(text); if (mb) { lastRoute = 'finance'; return batchStart(mb, text); } }
   lastRoute = RT.route(text);
   if (lastRoute === 'memory') return memoryReply(text);
   if (lastRoute === 'journal') return journalReply(text);
@@ -342,8 +347,9 @@ const reminderAsk = () => { const d = pendingReminder; return `Shall I remind yo
 async function sendChat(text, opts) {
   text = text.trim(); if (!text || AI.ai.busy) return;
   const tool = toolReply(text);
-  if (tool) { const tag = pendingReminder ? 'reminders' : pendingEntry ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
-    if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingReminder && !BK) await phrase(msg, text); return; }
+  if (tool) { const tag = pendingReminder ? 'reminders' : pendingEntry || pendingBatch ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
+    if (S.settings.autoMoney && pendingEntry) return saveEntry(); if (S.settings.autoMoney && pendingBatch && !pendingBatch.ask.length) return batchSave();
+    if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingBatch && !pendingReminder && !BK) await phrase(msg, text); return; }
   if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
@@ -501,7 +507,11 @@ const actions = {
   bizview: (id) => { bizView = id; render(); },
   'ent-save': () => saveEntry(), 'ent-cancel': async () => { pendingEntry = null; say('Okay, nothing saved.'); },
   'ent-edit': () => { const e = pendingEntry; pendingEntry = null; paintChat(true); const ta = $('.chatin textarea'); if (ta && e) { ta.value = e.text; ta.focus(); } },
-  'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
+  'bat-save': () => batchSave(), 'bat-cancel': () => { pendingBatch = null; say('Okay, nothing saved.'); },
+  'bat-del': (i) => { const b = pendingBatch; if (!b) return; b.items.splice(Number(i), 1); if (!b.items.length) { pendingBatch = null; return say('Okay, nothing saved.'); } say(batchText()); },
+  'bat-edit': (i) => { const b = pendingBatch; if (!b) return; const [x] = b.items.splice(Number(i), 1); b.editing = true; paintChat(true); const ta = $('.chatin textarea'); if (ta && x) { ta.value = x.text; ta.focus(); } },
+  automoney: () => mutate(() => { S.settings.autoMoney = !S.settings.autoMoney; }, { close: false }),
+  'ent-undo': async (id) => { const u = entryUndo[id]; if (!u) return; S.tx = u.tx; S.bills = u.bills; for (const f of u.fin || []) { LIFE.finance = LIFE.finance.filter((x) => x.id !== f.id).concat(f.prev ? [f.prev] : []); if (f.prev) await LF.put('finance', f.prev); else await LF.del('finance', f.id); } if (u.month) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.month.id).concat(u.month); await LF.put('finance', u.month); } else if (u.monthId) { LIFE.finance = LIFE.finance.filter((x) => x.id !== u.monthId); await LF.del('finance', u.monthId); } delete entryUndo[id]; await save(); say('Undone. Everything is back as it was.'); },
   'books-start': () => { BK = { step: 0, month: M.booksMonth() }; booksAsk(); }, 'books-snooze': async () => { await booksState({ snoozeUntil: new Date().setHours(24, 0, 0, 0) }); say('Okay, I’ll ask again tomorrow.'); },
   'books-skip': async () => { const st = booksStateGet(); await booksState({ skipped: [...(st.skipped || []), M.booksMonth()] }); BK = null; say('Skipped Books Day for this month.'); },
   'books-close': () => booksClose(), 'books-later': () => { BK = null; say('Okay, the month stays open. Say “Books Day” when you’re ready.'); },
@@ -860,6 +870,54 @@ async function booksReminder() {
   let r = S.reminders.find((x) => x.title === 'ANNA Books Day' && !x.done);
   if (!r) { r = { id: L.uid(), title: 'ANNA Books Day', notes: 'Open ANNA and close the month', at, repeat: 'monthly', notified: 0, done: 0, done_at: null, created_at: Date.now(), dest: { anna: Date.now() } }; S.reminders.unshift(r); } else r.at = at;
   await save(); actions['rem-ios'](r.id);
+}
+// ---- many money items in one message (balance, planned payments, debts, payday, expenses): one card, Save all ----
+const itemLine = (x, i) => { M.setCurrency(curCode()); return `${i + 1}. ${M.ITEM_LABEL[x.type]} · ${x.name} · ${M.money(x.amount)}${x.date ? ' · ' + dstr(x.date) : ''}`; };
+function batchText() {
+  const b = pendingBatch, p = M.cashPlan(b.items);
+  const L = [`I found ${b.items.length} money ${b.items.length === 1 ? 'item' : 'items'}:`, ...b.items.map(itemLine), ...M.cashPlanText(p)];
+  if (b.items.some((x) => x.type === 'unknown')) L.push('“Not sure” items: tap Edit item to say what they are (I’ll count them as planned payments if you save as is).');
+  if (b.ask.length) L.push(M.askAside(b.ask[0].name)); else L.push(S.settings.autoMoney ? '' : 'Nothing is saved until you tap Save all.');
+  return L.filter(Boolean).join('\n');
+}
+function batchStart(r, text) { pendingBatch = { items: r.items, ask: r.ask, text }; if (AI.ai.state === 'ready' && r.items.some((x) => x.type === 'unknown')) setTimeout(classifyUnknown, 0); return batchText(); }
+// rules couldn't decide → ask Qwen for one word; anything unclear stays "Not sure"
+async function classifyUnknown() {
+  for (const x of pendingBatch?.items || []) if (x.type === 'unknown') { try { const w = (await AI.ask([{ role: 'system', content: 'Classify a money note. Answer with one word only: balance, payment, debt, income or expense.' }, { role: 'user', content: x.text }], null, { maxTokens: 4 })).toLowerCase(); const t = { balance: 'balance', payment: 'planned', debt: 'debt', income: 'income', expense: 'expense' }[(w.match(/balance|payment|debt|income|expense/) || [])[0]]; if (t) x.type = t; } catch {} }
+  if (pendingBatch) { S.chat.at(-1).content = batchText(); paintChat(true); save(); }
+}
+function batchAnswer(text) {
+  const b = pendingBatch;
+  if (b.ask.length) { const q = b.ask[0];
+    if (M.isNone(text) || /^\s*(skip|nothing|0|r\s?0)\s*$/i.test(text)) { b.ask.shift(); return batchText(); }
+    const a = M.amountOf(text); if (a?.cents) { b.ask.shift(); b.items.push({ ...q, amount: a.cents, name: q.name }); return batchText(); } }
+  if (b.editing) { const x = M.classifyItem(text); if (x.amount) { b.editing = false; b.items.push(x); return batchText(); } }
+  return '';
+}
+async function batchSave() {
+  const b = pendingBatch; if (!b) return; pendingBatch = null; M.setCurrency(curCode());
+  const now = Date.now(), items = b.items.map((x) => (x.type === 'unknown' ? { ...x, type: 'planned' } : x)), plan = M.cashPlan(items);
+  const finIds = ['cash', 'payday'], before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: finIds.map((id) => ({ id, prev: LIFE.finance.find((x) => x.id === id) || null })) };
+  const pay = items.find((x) => x.type === 'income' && x.date), endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 12).getTime(), due = (x) => x.date || pay?.date || endOfMonth, fin = [];
+  for (const x of items) {
+    if (x.type === 'balance') fin.push({ id: 'cash', type: 'cash', balance: x.amount, at: now });
+    else if (x.type === 'income' && x.date) fin.push({ id: 'payday', type: 'payday', amount: x.amount, date: x.date, name: x.name, at: now });
+    else if (x.type === 'income') S.tx.push({ id: L.uid(), kind: 'income', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
+    else if (x.type === 'expense') S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
+    else S.bills.push({ id: L.uid(), name: x.name, amount_cents: x.amount, due_at: due(x), priority: 2, repeat_monthly: 0, paid: 0, paid_at: null, kind: x.type === 'debt' ? 'debt' : 'planned', ...(x.person ? { person: x.person } : {}), ...(x.setAside ? { set_aside: 1 } : {}) });
+  }
+  for (const r of fin) { LIFE.finance = LIFE.finance.filter((y) => y.id !== r.id).concat(r); await LF.put('finance', r); }
+  await save();
+  const ok = (await kvGet('state'))?.bills?.length === S.bills.length && (await LF.loadAll()).finance.filter((y) => fin.some((r) => r.id === y.id)).length === fin.length;
+  if (!ok) { S.tx = before.tx; S.bills = before.bills; await save(); return say('I couldn’t save that on this device. Nothing was changed.'); }
+  const uid = L.uid(); entryUndo[uid] = before;
+  await say([`Saved ${items.length} ${items.length === 1 ? 'item' : 'items'}. Money now shows them.`, ...M.cashPlanText(plan)].join('\n'), { undo: uid });
+}
+// Money tab: the same plan from what is stored (balance − later spending − unpaid planned payments and debts, until payday)
+function cashPlanStored() {
+  const c = LIFE.finance.find((x) => x.id === 'cash'); if (!c) return null; const p = LIFE.finance.find((x) => x.id === 'payday');
+  const items = [{ type: 'balance', amount: c.balance }, ...S.tx.filter((t) => t.occurred_at > c.at).map((t) => ({ type: t.kind === 'income' ? 'balance' : 'expense', amount: t.amount_cents })), ...S.bills.filter((b) => !b.paid && (b.kind === 'planned' || b.kind === 'debt')).map((b) => ({ type: b.kind, amount: b.amount_cents })), ...(p && M.daysUntil(p.date) >= 0 ? [{ type: 'income', amount: p.amount, date: p.date }] : [])];
+  return M.cashPlan(items);
 }
 // chat questions about money/staff → exact answers from money.js
 function moneyReply(text) {
