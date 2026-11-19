@@ -58,7 +58,7 @@ export async function load() {
   if (first && !navigator.onLine) return set({ error: 'You are offline. The first download of ANNA’s brain needs internet (Wi-Fi recommended).' });
   set({ state: first ? 'downloading' : 'loading', error: '', stage: first ? 'Downloading' : 'Loading from this device', loadStart: Date.now(), progress: first ? { phase: 'download', loaded: 0, total: MODEL.bytes } : null });
   ls((s) => s.setItem(FLAG, String(Date.now()))); navigator.storage?.persist?.().catch(() => {});
-  let lock; try { lock = await navigator.wakeLock?.request('screen'); } catch {}
+  let lock; try { navigator.wakeLock?.request('screen').then((l) => { lock = l; if (!loading) l.release?.(); }, () => {}); } catch {} // never awaited: in Home Screen apps on iOS this request can hang
   const t0 = performance.now();
   loading = (async () => {
     try {

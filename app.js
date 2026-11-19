@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
