@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.3.0';
+export const VERSION = '1.3.1';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -324,6 +324,7 @@ function toolReply(text) {
   if (BK) { const r = booksAnswer(text); if (r) return r; }
   if (/^\s*(start )?books day\s*$/i.test(text)) { BK = { step: 0, month: M.booksMonth() }; setTimeout(() => booksAsk(), 0); return 'Let’s close the month.'; }
   if (pendingBatch) { const r = batchAnswer(text); if (r) return r; }
+  { const mv = M.parseMoveDue(text); if (mv) { lastRoute = 'finance'; if (mv.type === 'moveDue' && !mv.date) { const pd = moneyView().payday; if (!pd) return 'When do you get paid? For example: “move all due dates to the 26th”.'; mv.date = pd.date; } if (mv.type === 'moveDue' && !S.bills.some((b) => !b.paid)) return 'You have no unpaid bills to move.'; pendingEntry = { ...mv, text }; return describeEntry(mv); } }
   if (!['reminders', 'calc', 'staff', 'memory', 'journal', 'research'].includes(RT.route(text))) { const mb = M.parseItems(text); if (mb) { lastRoute = 'finance'; return batchStart(mb, text); } }
   lastRoute = RT.route(text);
   if (lastRoute === 'memory') return memoryReply(text);
@@ -415,7 +416,7 @@ function render(anim) {
   if (anim) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); el.scrollTop = 0; } else el.scrollTop = y;
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}" aria-label="${n}" ${k === tab ? 'aria-current="page"' : ''}>${ic(k)}${n}</button>`).join('');
   const rec = editId ? (LIFEKEY[sheet] ? LIFE[LIFEKEY[sheet]] : S[KEY[sheet]])?.find((x) => x.id === editId) : undefined, f = FORMS[sheet]?.(rec || (sheet === 'reminder' && reminderPrefill ? reminderPrefill : undefined));
-  const special = sheet === 'chat' ? chatPanel() : sheet === 'ctx' ? ctxPanel() : sheet === 'restore' ? restorePanel() : sheet === 'mbudget' ? budgetPanel() : sheet === 'calc' ? calcPanel() : sheet === 'afford' ? affordPanel() : '';
+  const special = sheet === 'chat' ? chatPanel() : sheet === 'ctx' ? ctxPanel() : sheet === 'restore' ? restorePanel() : sheet === 'mbudget' ? budgetPanel() : sheet === 'calc' ? calcPanel() : sheet === 'afford' ? affordPanel() : sheet === 'paybill' ? payPanel() : '';
   $('#sheet').innerHTML = special ? special : f ? `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="${f[0]}"><div class="gr"></div><div class="row"><h2 class="grow">${f[0]}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div><form data-form="${sheet}" novalidate>${f[1]}<button class="btn full" style="margin-top:14px">${f[2]}</button>${rec ? `<button type="button" class="btn bad full" style="margin-top:8px" data-act="${LIFEKEY[sheet] ? 'ldel' : 'del'}" data-k="${sheet}" data-id="${rec.id}">Delete ${(NAME[sheet] || 'entry').toLowerCase()}</button>` : ''}</form></div>` : '';
   document.body.classList.toggle('lock', !!(f || special));
   if (sheet === 'chat') { chatKey = AI.ai.state + AI.ai.busy + AI.ai.error; const x = $('#chatmain'); if (x) x.scrollTop = x.scrollHeight; }
@@ -505,7 +506,8 @@ const actions = {
   memcat: (id) => { memCat = id; render(); },
   open: (id) => { sheet = id; editId = null; render(); }, close: () => { sheet = null; editId = null; pendingRestore = null; render(); },
   'fb-up': (id) => rate(id, 'up'), 'fb-down': (id) => rate(id, 'down'),
-  pay: (id) => { const b = byId(S.bills, id); const rec = confirm(`Mark “${b.name}” as paid and record ${L.fmt(b.amount_cents, cur())} as an expense in Money?\n\nOK = paid + record expense\nCancel = just mark paid`); mutate(() => L.payBill(S, id, { recordExpense: rec }), { close: false }); toast(b.repeat_monthly ? `Paid. Next due ${dstr(b.due_at)}.` : 'Marked paid.'); },
+  pay: (id) => { payId = id; sheet = 'paybill'; render(); },
+  'pay-do': (how) => { const b = byId(S.bills, payId); sheet = null; if (!b) return render(); mutate(() => L.payBill(S, b.id, { recordExpense: how === 'exp' }), { close: false }); payId = null; toast(b.repeat_monthly ? `Paid. Next due ${dstr(b.due_at)}.` : how === 'exp' ? `Paid. ${L.fmt(b.amount_cents, cur())} taken off your money.` : 'Marked paid.'); },
   unpay: (id) => mutate(() => L.unpayBill(S, id), { close: false }),
   'inv-paid': (id) => mutate(() => { const r = byId(S.biz, id); r.status = 'paid'; r.paid_at = Date.now(); }, { close: false }),
   export: async () => { if (!auth || !bkKey) return toast('Unlock Anna first.'); const env = await A.encryptBackup({ ...S, life: { ...LIFE, memories: S.mem }, logo: logoUrl, exported_at: Date.now(), app_version: VERSION }, auth, bkKey), name = `anna-backup-${L.tsToDay(Date.now())}.json`; const r = await download(name, JSON.stringify(env), 'application/json'); if (r !== 'cancelled') { S.settings.last_backup_at = Date.now(); save(); toast(`Backup ready: ${L.describeCounts(L.counts(S))}.`, { ms: 5000 }); } },
@@ -784,6 +786,14 @@ function calcPanel() { M.setCurrency(curCode()); const sel = (k, opts) => fld(op
     proj: `<div class="two">${cin('start', 'Starting amount')}${cin('monthly', 'Added each month')}</div><div class="two">${cin('growth', 'Growth % per month', '0')}${cin('months', 'Months', '12', 'numeric')}</div>` }[calcTab];
   return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Calculator"><div class="gr"></div><div class="row"><h2 class="grow">Calculator</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
   <div class="chips" style="margin:8px 0">${CTABS.map(([k, n]) => `<button data-act="ctab" data-id="${k}" class="${k === calcTab ? 'on' : ''}">${n}</button>`).join('')}</div>${f}<div class="card" id="cres">${calcResult()}</div></div>`; }
+let payId = null;
+function payPanel() { const b = byId(S.bills, payId); if (!b) return '';
+  return `<div class="bk" data-act="close"></div><div class="pn" role="dialog" aria-label="Pay ${esc(b.name)}"><div class="gr"></div><div class="row"><h2 class="grow">${esc(b.name)}</h2><button class="ib" data-act="close" aria-label="Close">${ic('x')}</button></div>
+  <div class="mute" style="margin:4px 0 12px">${money(b.amount_cents)} · due ${dstr(b.due_at)}</div>
+  <button class="btn full" data-act="pay-do" data-id="exp">I paid it: take ${money(b.amount_cents)} off my money</button>
+  <button class="btn soft full" style="margin-top:8px" data-act="pay-do" data-id="only">Already paid: my money now is up to date</button>
+  <button class="btn sage full" style="margin-top:8px" data-act="close">Not paid yet</button>
+  <button class="btn sage full" style="margin-top:8px" data-act="edit" data-k="bill" data-id="${b.id}">Change amount or date</button></div>`; }
 function affordData() { const ym = monthNow(), [m0, m1] = L.monthRange(), ms = L.monthSummary(S);
   return { budget: budgetFor(ym), recorded: { income: ms.income, expenses: ms.expense }, unpaidBills: S.bills.filter((b) => !b.paid && b.due_at < m1) }; }
 function affordText(amount, what = '') { M.setCurrency(budgetFor(monthNow())?.currency || curCode()); const r = M.afford(amount, affordData());
@@ -817,6 +827,8 @@ function describeEntry(e) {
     case 'billCancel': return `Remove the bill “${b?.name || e.name}”${b ? ` (${m(b.amount_cents)})` : ''}?`;
     case 'billPaid': return `Mark ${bu.name} (${m(e.amount || bu.amount_cents)}) as paid and record it as spent?`;
     case 'saved': return `Record ${m(e.amount)} saved this month?`;
+    case 'moveDue': { const n = S.bills.filter((x) => !x.paid).length; return `Move ${n === 1 ? 'your unpaid bill' : `all ${n} unpaid bills`} to ${dstr(e.date)}${e.pay ? `, and set payday to ${dstr(e.date)}` : ''}?`; }
+    case 'paydayDate': return `Set payday to ${dstr(e.date)}?`;
     default: return `Note ${e.name}, ${m(e.amount)}, for next month?`;
   }
 }
@@ -826,8 +838,15 @@ function entryReply(text) {
   if (e.type === 'billCancel' && !findBill(e.name) && !(monthRec()?.lines || []).some((l) => M.sameName(l.name, e.name))) return `I couldn’t find a bill called “${e.name}”.`;
   pendingEntry = { ...e, text }; return describeEntry(e);
 }
+async function saveDates(e) {
+  const p = LIFE.finance.find((x) => x.id === 'payday'), before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: [{ id: 'payday', prev: p ? { ...p } : null }] }, out = [];
+  if (e.type === 'moveDue') { const un = S.bills.filter((b) => !b.paid); un.forEach((b) => { b.due_at = e.date; }); out.push(`Moved ${un.length} unpaid bill${un.length === 1 ? '' : 's'} to ${dstr(e.date)}.`); }
+  if (e.type === 'paydayDate' || e.pay) { const r = { ...(p || { id: 'payday', type: 'payday', name: 'Pay', amount: 0 }), date: e.date, at: Date.now() }; LIFE.finance = LIFE.finance.filter((x) => x.id !== 'payday').concat(r); await LF.put('finance', r); out.push(`Payday is now ${dstr(e.date)}.${r.amount ? '' : ' Tell me how much you get paid, e.g. “I get paid R10500 on the 26th”.'}`); }
+  await save(); const uid = L.uid(); entryUndo[uid] = before; render(); await say(out.join('\n'), { undo: uid });
+}
 async function saveEntry() {
   const e = pendingEntry; if (!e) return; pendingEntry = null; M.setCurrency(curCode());
+  if (e.type === 'moveDue' || e.type === 'paydayDate') return saveDates(e);
   const existing = monthRec(), month = monthRec(true);
   const before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), month: existing ? JSON.parse(JSON.stringify(existing)) : null, monthId: month.id };
   month.spent ||= {}; month.saved ||= 0; month.next ||= [];

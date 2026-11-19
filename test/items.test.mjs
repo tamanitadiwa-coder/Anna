@@ -45,8 +45,8 @@ test('v1.3 main Money card: left after all bills, safe now, money coming', () =>
   const bills = [{ name: 'House deposit', amount_cents: 150000, due_at: pd }, { name: 'Ashraf', amount_cents: 50000, due_at: pd }, { name: 'Moving', amount_cents: 50000, due_at: pd }, { name: 'Rent', amount_cents: 600000, due_at: dec1 }];
   const p = M.moneyPlan({ cash: 480000, bills, incomes: [{ name: 'Payday', amount: 1050000, date: pd }, { name: 'Client', amount: 500000, date: jan10 }] }, NOW);
   assert.deepEqual([p.billsTotal, p.coming, p.left, p.short], [850000, 1550000, 1180000, 0]);
-  assert.deepEqual(p.periods.map((q) => [q.start, q.end, q.safe, q.days]), [[480000, 230000, 230000, 6], [1280000, 680000, 450000, 46], [1180000, 1180000, 500000, 31]]);
-  assert.equal(p.perDayNow, 38333); assert.equal(p.periods.reduce((n, q) => n + q.safe, 0), p.left);
+  assert.deepEqual(p.periods.map((q) => [q.start, q.end, q.safe, q.days]), [[480000, 480000, 480000, 6], [1530000, 680000, 200000, 46], [1180000, 1180000, 500000, 31]]);
+  assert.equal(p.perDayNow, 80000); assert.equal(p.periods.reduce((n, q) => n + q.safe, 0), p.left);
   // a big bill after payday that payday can't cover is reserved from money now
   const t = M.moneyPlan({ cash: 300000, bills: [{ name: 'Car', amount_cents: 1200000, due_at: dec1 }], incomes: [{ name: 'Payday', amount: 1000000, date: pd }] }, NOW);
   assert.deepEqual([t.safeNow, t.periods[1].safe, t.left], [100000, 0, 100000]);
@@ -58,4 +58,12 @@ test('money coming from chat, with dates next year', () => {
   assert.deepEqual(['Sipho owes me R500 on the 30th', 'refund R450 on the 28th'].map((t) => [M.classifyItem(t, NOW).type, M.classifyItem(t, NOW).name]), [['income', 'From Sipho'], ['income', 'Refund']]);
   assert.equal(M.classifyItem('I get paid on the 25th R10500', NOW).incoming, undefined);
   assert.equal(new Date(M.classifyItem('send mom R1200 on the 25th of December', NOW).date).getMonth(), 11);
+});
+test('v1.3.1: ordinals are dates not amounts; move due dates; bills due on payday are paid from payday', () => {
+  assert.equal(M.parseEntry('Change all due dates after pay on the 26th'), null);
+  for (const t of ['Change all due dates to after pay on the 26th', 'Cgange all due dates after pay on the 26th']) { const x = M.parseMoveDue(t, NOW); assert.deepEqual([x.type, x.pay, new Date(x.date).getDate()], ['moveDue', true, 26], t); }
+  assert.deepEqual(M.parseMoveDue('move my bills to after payday', NOW), { type: 'moveDue', date: null, pay: false });
+  assert.equal(M.parseMoveDue('payday is the 26th', NOW).type, 'paydayDate'); assert.equal(M.parseMoveDue('Netflix R99', NOW), null); assert.equal(M.parseMoveDue('I get paid on the 26th R10500', NOW), null);
+  const pd = new Date(2026, 10, 26, 12).getTime(), p = M.moneyPlan({ cash: 410000, bills: [{ name: 'A', amount_cents: 330000, due_at: pd }], incomes: [{ name: 'Payday', amount: 1050000, date: pd }] }, NOW);
+  assert.deepEqual([p.safeNow, p.periods[1].dueTotal, p.periods[1].safe, p.left], [410000, 330000, 720000, 1130000]);
 });

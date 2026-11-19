@@ -94,7 +94,14 @@ export async function deleteOldModel() { const root = await navigator.storage.ge
 
 // ---- asking ----
 export function warm() { return null; } // WebLLM reads prompts fast enough on the GPU; nothing to pre-warm
-export async function ask(messages, onText, { maxTokens = 320 } = {}) {
+export const isGone = (e) => /disposed|destroyed|device (?:was |is )?lost|instance reference no longer exists|GPUDevice/i.test(String(e?.message || e));
+export async function ask(messages, onText, opts = {}) {
+  try { return await ask1(messages, onText, opts); }
+  catch (e) { if (!isGone(e)) throw e; // iPhone took the GPU back while ANNA was in the background: wake the brain again and retry once
+    loaded = false; try { await eng?.unload(); } catch {} eng = null; set({ state: 'unknown', busy: false }); await refresh(); if (ai.state !== 'cached') throw e;
+    await load(); if (ai.state !== 'ready') throw new Error('ANNA’s brain had to restart and could not wake up. Tap “ANNA is awake” on Home.'); return ask1(messages, onText, opts); }
+}
+async function ask1(messages, onText, { maxTokens = 320 } = {}) {
   if (ai.state !== 'ready' || !eng) throw new Error('ANNA’s brain is not loaded.');
   set({ busy: true, phase: 'think' }); let text = '', first = 0; const t0 = performance.now(), n0 = { n: 0 };
   try {

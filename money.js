@@ -143,7 +143,7 @@ export function timesheet(people, shifts, now = Date.now(), { isSpecialDay = (is
 }
 
 // ================= v0.10: chat entries, warnings, bill priorities, Books Day =================
-const AMT = /(?:R|\$|€|£)\s?(\d[\d\s,]*(?:[.,]\d{1,2})?)|(\d[\d\s,]*(?:[.,]\d{1,2})?)\s*(?:rand|bucks)?/i;
+const AMT = /(?:R|\$|€|£)\s?(\d[\d\s,]*(?:[.,]\d{1,2})?)|(\d[\d\s,]*(?:[.,]\d{1,2})?)(?!\d|\s*(?:st|nd|rd|th)\b)\s*(?:rand|bucks)?/i;
 const amountIn = (t) => { const m = String(t).match(AMT); return m ? toCents((m[1] || m[2]).trim()) : null; };
 const clean = (s) => String(s || '').replace(/\b(this month|per month|a month|monthly|every month|from now on)\b/gi, '').replace(/[.?!]+$/, '').replace(/\s+/g, ' ').trim();
 const cap = (s) => s.replace(/^./, (c) => c.toUpperCase());
@@ -161,6 +161,13 @@ export function parseEntry(text) {
   if ((m = lo.match(/\b(?:spent|paid|bought|used)\b.*?\b(?:on|for)\s+(.+)$/)) || (m = lo.match(/\b(?:spent|bought)\s+(.+?)\s+(?:for\s+)?(?:r|\$|€|£)?\s?\d/))) return { type: 'expense', amount: amt, category: cap(clean(m[1].replace(AMT, '').replace(/^(?:a|an|the|some)\s+/, '')) || 'General') };
   const name = clean(t.replace(AMT, '').replace(/^(?:new bill:?|add(?: a)? bill(?: for)?:?)\s*/i, '').replace(/\b(for|at|of|costs?)\s*$/i, ''));
   if (name && name.length <= 40 && /^[a-z]/i.test(name)) return { type: 'billNew', name: cap(name), amount: amt, thisMonthOnly: /\bthis month\b/i.test(t) && !/\b(per|every|a) month|monthly\b/i.test(t) };
+  return null;
+}
+// "Change all due dates to after pay on the 26th", "move my bills to the 1st", "payday is the 26th" (no amount)
+export function parseMoveDue(text, now = Date.now()) {
+  const lo = String(text || '').toLowerCase(), d = dateIn(text, now), pay = /\b(?:pay ?day|pay|paid|salary)\b/.test(lo), billsWord = /\b(?:due dates?|bills|payments|debts|everything)\b/.test(lo);
+  if ((/\b(?:change|move|set|put|push|shift|make)\b/.test(lo) || /\bdue dates?\b/.test(lo)) && billsWord && (d || /\bafter (?:my )?pay(?:day)?\b/.test(lo))) return { type: 'moveDue', date: d ? d.date : null, pay: pay && !!d };
+  if (!billsWord && d && !amountOf(lo.replace(d.text.toLowerCase(), ' ')) && (/\bpay ?day (?:is|will be|moves?|changed?)\b/.test(lo) || /\b(?:i )?get paid\b/.test(lo))) return { type: 'paydayDate', date: d.date };
   return null;
 }
 export const sameName = (a, b) => { const n = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); const x = n(a), y = n(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
@@ -294,7 +301,7 @@ export function moneyToday({ cash, bills = [], payday = null, wishes = [], incom
 }
 
 // v1.3: the main Money card. Walks the timeline: money now, bills by due date, money coming in.
-// A bill due on or before an income date is paid from the money you have before it.
+// A bill due before an income date is paid from the money you have now; one due on the income day (or later) from that income.
 // Period 0 = now → first income; period k starts when income k lands. safe[k] = what you can spend in that period
 // while every later bill is still covered (greedy: earlier periods first). left = cash + all incoming − all unpaid bills.
 export function moneyPlan({ cash, bills = [], incomes = [] }, now = Date.now()) {
@@ -306,7 +313,7 @@ export function moneyPlan({ cash, bills = [], incomes = [] }, now = Date.now()) 
   const dayOf = (b) => (b.due_at ? Math.max(0, daysUntil(b.due_at, now)) : 0);
   let bal = cash ?? 0; const periods = starts.map((st, k) => {
     const from = k ? daysUntil(st, now) : -Infinity, to = k < inc.length ? daysUntil(inc[k].date, now) : Infinity;
-    const due = unpaid.filter((b) => dayOf(b) > from && dayOf(b) <= to).sort((a, b) => (a.due_at || 0) - (b.due_at || 0)), dueTotal = due.reduce((n, b) => n + b.amount_cents, 0);
+    const due = unpaid.filter((b) => dayOf(b) >= from && dayOf(b) < to).sort((a, b) => (a.due_at || 0) - (b.due_at || 0)), dueTotal = due.reduce((n, b) => n + b.amount_cents, 0);
     if (k) bal += inc[k - 1].amount; const start = bal; bal -= dueTotal;
     return { k, income: k ? inc[k - 1] : null, start, bills: due, dueTotal, end: bal, days: Math.max(0, daysUntil(ends[k], now) - Math.max(0, daysUntil(st, now))) };
   });

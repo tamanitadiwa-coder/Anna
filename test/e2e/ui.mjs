@@ -117,10 +117,10 @@ try {
   await page.click('[data-act="open"][data-id="bill"]'); await fill({ name: 'Rent', amount: '7500', due: tomorrow(), monthly: true }); await submit();
   await page.click('[data-act="open"][data-id="bill"]'); await fill({ name: 'Gym', amount: '450', due: tomorrow() }); await submit();
   s = await S(); R.ok(s.bills.length === 2, 'add bills'); dialogs = [];
-  await page.click('.item:has-text("Gym") [data-act="pay"]'); s = await S(); R.ok(s.bills.find((b) => b.name === 'Gym').paid === 1 && s.tx.some((t) => t.note === 'Gym'), 'mark bill paid and record expense', dialogs[0]);
+  await page.click('.item:has-text("Gym") [data-act="pay"]'); await page.click('[data-act="pay-do"][data-id="exp"]'); s = await S(); R.ok(s.bills.find((b) => b.name === 'Gym').paid === 1 && s.tx.some((t) => t.note === 'Gym'), 'mark bill paid and record expense', dialogs[0]);
   R.ok(await page.locator('h2', { hasText: 'Recently paid' }).count() === 1, 'paid bills listed with payment date');
   await page.click('.item:has-text("Gym") [data-act="unpay"]'); s = await S(); R.ok(s.bills.find((b) => b.name === 'Gym').paid === 0, 'undo bill payment');
-  const due0 = s.bills.find((b) => b.name === 'Rent').due_at; await page.click('.item:has-text("Rent") [data-act="pay"]'); s = await S(); R.ok(s.bills.find((b) => b.name === 'Rent').due_at > due0 && !s.bills.find((b) => b.name === 'Rent').paid, 'monthly bill rolls to next month');
+  const due0 = s.bills.find((b) => b.name === 'Rent').due_at; await page.click('.item:has-text("Rent") [data-act="pay"]'); await page.click('[data-act="pay-do"][data-id="exp"]'); s = await S(); R.ok(s.bills.find((b) => b.name === 'Rent').due_at > due0 && !s.bills.find((b) => b.name === 'Rent').paid, 'monthly bill rolls to next month');
   await page.click('.item .grow >> text=Gym'); await fill({ amount: '500' }); await submit(); s = await S(); R.ok(s.bills.find((b) => b.name === 'Gym').amount_cents === 50000, 'edit bill');
   await page.click('.item:has-text("Gym") [data-act="del"]'); s = await S(); R.ok(!s.bills.some((b) => b.name === 'Gym'), 'delete bill');
   await page.click('.card:has(.bar) [data-act="del"]'); s = await S(); R.ok(s.budgets.length === 0, 'delete budget'); await page.click('#toastbtn'); s = await S(); R.ok(s.budgets.length === 1, 'undo budget delete');
