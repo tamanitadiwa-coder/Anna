@@ -62,6 +62,15 @@ try {
   R.ok(looked.every((u) => !/gsk_|key=/.test(u)) && looked.some((u) => /definition\/lekker/.test(u)), 'only the looked-up words are sent, no key');
   t = await say('ejima means twin sister'); R.ok(/^Got it: “ejima” means twin sister/.test(t) && (await S(() => window.__anna.S.settings.words.some((w) => w.word === 'ejima' && w.means === 'twin sister'))), 'teach slang directly', t);
   R.ok(sent.length >= g0, 'lookups did not use the Groq helper');
+  await page.evaluate(() => { window.__anna.S.settings.lookup = false; window.__anna.AI.ai.needsReload = true; }); await ctx.unroute('https://api.groq.com/**'); await page.evaluate(() => localStorage.setItem('anna.online', JSON.stringify({ on: false })));
+  t = await say('Add mama ejima 5000 debt to be paid by the 12th of November'); R.ok(/Mama Ejima \(debt\)/.test(t), 'debt with a two-word name is understood without the AI', t);
+  await page.click('[data-act="bat-cancel"], [data-act="ent-cancel"]').catch(() => {}); await page.waitForTimeout(300);
+  await page.evaluate(() => localStorage.setItem('anna.autoRestartAt', String(Date.now() - 600000)));
+  await page.fill('.chatin textarea', 'tell me a story'); await Promise.all([page.waitForEvent('load', { timeout: 15000 }), page.click('#send')]); await ready(page);
+  await page.waitForTimeout(1500); t = nb(await page.evaluate(() => JSON.stringify(window.__anna.S.chat.slice(-2))));
+  R.ok(/tell me a story/.test(t) && (await page.locator('.chatin textarea').count()) === 1, 'brain lost: ANNA restarts herself once and resends the message', t);
+  await page.evaluate(() => { window.__anna.AI.ai.needsReload = true; });
+  t = await say('tell me a story'); R.ok(/graphics chip/.test(t) && (await page.locator('[data-act="reload-app"]').count()) >= 1, 'never restarts twice in a row: short message + Restart ANNA button', t);
   R.ok(errors.length === 0, 'no JavaScript errors', errors.join(' | '));
 } catch (e) { R.ok(false, 'unexpected error', e.stack); }
 try { await ctx.close(); } catch {} srv.close(); rmSync(dir, { recursive: true, force: true }); process.exit(R.finish() ? 0 : 1);

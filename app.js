@@ -9,7 +9,7 @@ import * as M from './money.js';
 import * as RT from './router.js';
 import * as OL from './online.js';
 import * as LK from './lookup.js';
-export const VERSION = '1.5.0';
+export const VERSION = '1.5.1';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -281,7 +281,7 @@ function engineHTML() {
 }
 const accessHTML = () => `<div class="card"><h2>What Anna may read</h2><div class="mute" style="margin:4px 0 4px">Only switched-on categories are shown to the local model, and nothing ever leaves this device. Notes and customer names are never included, and Anna can read but never change your data.</div>${AI.ACCESS.map(([k, n]) => sw(k, n)).join('')}<button class="link" data-act="ctx-open">Preview exactly what Anna sees</button></div>`;
 const SUGG = ['What should I focus on today?', 'How am I doing on money this month?', 'Which bills and invoices are unpaid?', 'Give me three tips to save on groceries.'];
-const extraBtns = (m) => (m.undo && entryUndo[m.undo] ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm sage" data-act="ent-undo" data-id="${m.undo}">Undo</button></div>` : '') + (m.books ? `<div class="row wrap" style="margin-top:8px">${m.books.map(([a, n, c]) => `<button class="btn sm ${c || ''}" data-act="${a}">${n}</button>`).join('')}</div>` : '');
+const extraBtns = (m) => (m.reload ? '<div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="reload-app">Restart ANNA</button></div>' : '') + (m.undo && entryUndo[m.undo] ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm sage" data-act="ent-undo" data-id="${m.undo}">Undo</button></div>` : '') + (m.books ? `<div class="row wrap" style="margin-top:8px">${m.books.map(([a, n, c]) => `<button class="btn sm ${c || ''}" data-act="${a}">${n}</button>`).join('')}</div>` : '');
 const followBtns = (m) => { const r = m.follow && S.reminders.find((x) => x.id === m.follow); return r && !r.done ? `<div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="rem-ios" data-id="${r.id}">iPhone Reminders</button><button class="btn sm sage" data-act="rem-ics" data-id="${r.id}">Add to Calendar</button></div><div class="mute" style="font-size:12px;margin-top:4px">${whereLives(r)}</div>` : ''; };
 const bubble = (m, i) => `<div class="bub ${m.role}${m.error ? ' err' : ''}">${m.error ? esc(m.error) : m.content ? esc(m.content).replace(/\n/g, '<br>') : '<span class="mute typing">Thinking</span>'}${m.follow ? followBtns(m) : ''}${extraBtns(m)}${m.at ? `<span class="t">${tstr(m.at)}</span>` : ''}</div>`;
 function chatMain() {
@@ -374,7 +374,8 @@ async function sendChat(text, opts) {
     lastRoute = 'research'; toast('Looking it up…', { ms: 2000 }); let a; try { a = await LK.answer(li); } catch { a = { text: 'I couldn’t reach the free lookup just now. Try again in a moment.' }; }
     if (a?.learned && !(S.settings.words || []).some((x) => x.word === a.learned.word)) S.settings.words = OL.mergeWords(S.settings.words || [], [a.learned]);
     return showTool(text, a.text, opts); } }
-  const tool = toolReply(OL.applyWords(text, S.settings.words || []));
+  // own words first (so names like “Mama Ejima” stay names); learned slang only if ANNA didn't understand
+  let tool = toolReply(text); if (!tool) { const t2 = OL.applyWords(text, S.settings.words || []); if (t2 !== text) tool = toolReply(t2); }
   if (tool) return showTool(text, tool, opts);
   if (!opts?.noOnline && OL.ready() && await onlineHelp(text)) return;
   return askBrain(text, opts);
@@ -399,15 +400,30 @@ async function onlineHelp(text, misread = '') {
   if (!r.answer) { if (learned) await save(); return false; }
   S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: r.answer + learned, at: Date.now(), tool: 'online' }); paintChat(true); await save(); return true;
 }
+// v1.5.1: iOS takes the GPU back when ANNA is in the background; only a page reload gets it back.
+// Reload by ourselves (at most once every 3 minutes, so it can never loop) and resend the message afterwards.
+const RS = 'anna.resend', RT_AT = 'anna.autoRestartAt';
+async function autoRestart(text) {
+  let last = 0; try { last = Number(localStorage.getItem(RT_AT) || 0); } catch {} if (Date.now() - last < 180000) return false;
+  try { localStorage.setItem(RT_AT, String(Date.now())); sessionStorage.setItem(RS, text); } catch { return false; }
+  await save(); toast('Restarting ANNA’s brain…', { ms: 3000 }); setTimeout(() => location.reload(), 300); return true;
+}
+async function resendAfterRestart() {
+  let t = ''; try { t = sessionStorage.getItem(RS) || ''; sessionStorage.removeItem(RS); } catch {} if (!t) return;
+  for (let i = 0; i < 600 && locked; i++) await new Promise((r) => setTimeout(r, 500)); if (locked) return;
+  await AI.refresh?.(); if (AI.ai.state === 'cached') { toast('Waking ANNA’s brain…'); await Promise.race([AI.load(), new Promise((r) => setTimeout(r, 45000))]); }
+  if (sheet !== 'chat') actions['chat-open'](); sendChat(t);
+}
 async function askBrain(text, opts) {
-  if (AI.ai.state === 'cached' && !AI.ai.crashed) { toast('Waking ANNA’s brain…'); await AI.load(); }
+  if (AI.ai.needsReload) { if (await autoRestart(text)) return; S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: AI.RELOAD_MSG, at: Date.now(), reload: true }); paintChat(true); await save(); return; }
+  if (AI.ai.state === 'cached' && !AI.ai.crashed) { toast('Waking ANNA’s brain…'); await Promise.race([AI.load(), new Promise((r) => setTimeout(r, 30000))]); if (AI.ai.state !== 'ready' && AI.gpuGone(AI.ai.error)) { AI.ai.needsReload = true; return askBrain(text, opts); } }
   if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
     const ctx = AI.buildContext(S, S.settings.ai, Date.now(), text, aiLife());
     await AI.ask(AI.buildMessages(ctx, hist, text, cur()), (t) => { a.content = t; paintChat(true); });
     a.content = a.content.trim().replace(/^[.,:;]+(?=\s*\S)/, '').trim(); if (!a.content) a.content = '(Anna produced no answer. Try rephrasing.)';
-  } catch (e) { a.content = ''; a.error = AI.friendly(e); }
+  } catch (e) { if (AI.ai.needsReload || AI.gpuGone(e)) { AI.ai.needsReload = true; const i = S.chat.indexOf(a); if (i > 0) { S.chat.splice(i - 1, 2); await save(); if (await autoRestart(text)) return; S.chat.splice(i - 1, 0, { role: 'user', content: text, at: Date.now() }, a); } a.content = AI.RELOAD_MSG; a.reload = true; } else { a.content = ''; a.error = AI.friendly(e); } }
   a.at = Date.now(); paintChat(); await save();
 }
 const fld = (l, inner) => `<label class="f"><span>${l}</span>${inner}</label>`;
@@ -567,6 +583,7 @@ const actions = {
   mmore: () => mutate(() => { S.settings.moneyMore = !S.settings.moneyMore; }, { close: false }),
   'inc-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   'wish-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
+  'reload-app': () => location.reload(),
   'lookup-on': () => mutate(() => { S.settings.lookup = !S.settings.lookup; }, { close: false }),
   'ol-on': () => { const c = OL.config(); if (!c.on && !c.key) { toast('Paste your free Groq API key first, then switch this on.', { ms: 5000 }); return; } OL.setConfig({ on: !c.on }); render(); },
   'ol-forget': () => { OL.setConfig({ key: '', on: false }); render(); toast('Online key removed from this phone.'); },
@@ -1070,5 +1087,7 @@ function moneyReply(text) {
   banner(); render(true);
   document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); return; } if (!locked && hiddenAt && Date.now() - hiddenAt > AUTOLOCK_MS) return lockNow(); if (!locked) { checkReminders(); if (tab === 'home' && !sheet) render(); } });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  resendAfterRestart();
+  document.addEventListener('visibilitychange', async () => { if (document.hidden || AI.ai.state !== 'ready' || !navigator.gpu) return; try { if (!(await navigator.gpu.requestAdapter())) AI.ai.needsReload = true; } catch { AI.ai.needsReload = true; } });
   window.__anna = { get S() { return S; }, get locked() { return locked; }, get life() { return LIFE; }, get lastURL() { return lastURL; }, offer: (t) => { offerRemember(t); paintChat(true); }, buildCtx: (q) => AI.buildContext(S, S.settings.ai, Date.now(), q, aiLife()), AI, L, A, VERSION, checkReminders, runDiagnostics }; // used by automated tests
 })();

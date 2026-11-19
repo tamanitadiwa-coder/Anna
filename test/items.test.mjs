@@ -72,3 +72,11 @@ test('v1.3.2: remove commands are never new bills', () => {
   assert.deepEqual([M.parseRemove('Remove the last added 5000').amount.cents, M.parseRemove('Remove the last added 5000').last], [500000, true]);
   assert.equal(M.parseRemove('delete the Netflix bill').name, 'Netflix'); assert.equal(M.parseRemove('Netflix R99'), null);
 });
+test('v1.5.1: "Add mama ejima 5000 debt …" is a debt; recent past dates are overdue, not next year', () => {
+  const N = new Date(2026, 10, 19, 22).getTime(), x = M.classifyItem('Add mama ejima 5000 debt to be paid by the 12th of November', N);
+  assert.deepEqual([x.type, x.name, x.amount, new Date(x.date).getFullYear(), new Date(x.date).getDate()], ['debt', 'Mama Ejima (debt)', 500000, 2026, 12]);
+  assert.equal(M.classifyItem('I owe mama ejima R5000', N).name, 'Mama Ejima (debt)'); assert.equal(M.classifyItem('I owe Ashraf 500', N).name, 'Ashraf (debt)');
+  assert.ok(M.parseItems('Add mama ejima 5000 debt to be paid by the 12th of November', N));
+  assert.equal(new Date(M.classifyItem('R5000 coming on 10 January from a client', N).date).getFullYear(), 2027);
+});
+test('v1.5.1: owe names stop before amounts', () => { assert.equal(M.classifyItem('I owe Sipho R300 on the 30th', NOW).name, 'Sipho (debt)'); });

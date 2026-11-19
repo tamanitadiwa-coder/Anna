@@ -13,7 +13,7 @@ const FLAG = 'anna-web:ai-loading';
 
 // ---- observable state. `state` always describes what is really in storage/memory, never a guess ----
 // unknown | unsupported | absent | downloading | cached | loading | ready
-export const ai = { state: 'unknown', progress: null, error: '', info: {}, storage: null, busy: false, crashed: false, diag: '', engine: null, stage: '', loadStart: 0, phase: 'rest' };
+export const ai = { state: 'unknown', progress: null, error: '', info: {}, storage: null, busy: false, crashed: false, needsReload: false, diag: '', engine: null, stage: '', loadStart: 0, phase: 'rest' };
 export const ENGINE_CFG = { context_window_size: 4096 };
 const subs = new Set();
 const set = (p) => { Object.assign(ai, p); subs.forEach((f) => { try { f(ai); } catch {} }); };
@@ -94,14 +94,19 @@ export async function deleteOldModel() { const root = await navigator.storage.ge
 
 // ---- asking ----
 export function warm() { return null; } // WebLLM reads prompts fast enough on the GPU; nothing to pre-warm
-export const isGone = (e) => /disposed|destroyed|device (?:was |is )?lost|instance reference no longer exists|GPUDevice/i.test(String(e?.message || e));
+export const isGone = (e) => /disposed|destroyed|device (?:was |is )?lost|instance reference no longer exists|GPUDevice|compatible GPU/i.test(String(e?.message || e));
+export const gpuGone = (m) => /compatible GPU|WebGPU|requestAdapter|adapter/i.test(String(m?.message || m || ''));
+export const RELOAD_MSG = 'Your iPhone switched off the graphics chip my brain runs on (it does this when ANNA sits in the background). Tap “Restart ANNA” to get me back. Your data is safe.';
+const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Waking up took too long.')), ms))]);
 export async function ask(messages, onText, opts = {}) {
   try { return await ask1(messages, onText, opts); }
   catch (e) { if (!isGone(e)) throw e; // iPhone took the GPU back while ANNA was in the background: wake the brain again and retry once
     for (let i = 0; i < 2; i++) {
       loaded = false; try { await eng?.unload(); } catch {} eng = null; set({ state: 'unknown', busy: false, error: '' });
       await new Promise((r) => setTimeout(r, 1200 * (i + 1))); await refresh(); if (ai.state !== 'cached') break; // give iOS a moment to hand the GPU back
-      await load(); if (ai.state === 'ready') { try { return await ask1(messages, onText, opts); } catch (e2) { if (!isGone(e2)) throw e2; } }
+      try { await within(load(), 45000); } catch {}
+      if (ai.state === 'ready') { try { return await ask1(messages, onText, opts); } catch (e2) { if (!isGone(e2)) throw e2; } }
+      if (gpuGone(ai.error) || gpuGone(e)) { set({ needsReload: true, error: '' }); throw new Error(RELOAD_MSG); }
     }
     const why = ai.error ? ` (${ai.error})` : ''; set({ error: '' });
     throw new Error(`Your iPhone switched off ANNA’s brain while she was in the background, and she couldn’t wake up again${why}. Close ANNA fully and open it again, then send your message once more.`); }

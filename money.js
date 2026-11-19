@@ -239,7 +239,7 @@ const MONS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oc
 export function dateIn(s, now = Date.now()) {
   const m = s.match(MDATE_RE);
   if (m) { const day = Number(m[1] || m[5]), mon = MONS.indexOf((m[2] || m[4]).slice(0, 3).toLowerCase()), yr = m[3] || m[6], d = new Date(now), today = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    let t = new Date(yr ? Number(yr) : d.getFullYear(), mon, day, 12); if (!yr && t < today) t = new Date(d.getFullYear() + 1, mon, day, 12); return { date: t.getTime(), text: m[0] }; }
+    let t = new Date(yr ? Number(yr) : d.getFullYear(), mon, day, 12); if (!yr && t < today && today - t > 60 * 864e5) t = new Date(d.getFullYear() + 1, mon, day, 12); return { date: t.getTime(), text: m[0] }; }
   const dm = s.match(DATE_RE); return dm ? { date: nextDayOfMonth(Number(dm[1] || dm[2]), now), text: dm[0] } : null;
 }
 const noDate = (s) => { const m = s.match(MDATE_RE) || s.match(DATE_RE); return m ? s.replace(m[0], ' ') : s; };
@@ -263,6 +263,10 @@ export function classifyItem(s, now = Date.now()) {
   if (/\b(get(?:ting)? paid|paid on|payday|pay ?day|salary|wages? (?:come|comes|in)|get my pay)\b/.test(lo)) return { type: 'income', name: /salary/.test(lo) ? 'Salary' : 'Pay', amount, date, text: s };
   if ((m = s.match(/\b([A-Z][\w'-]*)\s+(?:owes|will pay|is paying|pays)\s+me\b/)) || (m = s.match(/\b(?:from|by)\s+([A-Za-z][\w'-]*)\s*$/)) && /\b(coming|expect|receive|getting|get)\b/.test(lo)) { const p = cap(m[1]); return { type: 'income', incoming: true, name: `From ${p}`, amount, date, text: s }; }
   if (/\b(coming(?!\s+up)|expecting|i expect|will (?:get|receive)|receiving|getting paid for|refund)\b/.test(lo)) return { type: 'income', incoming: true, name: nameOf(bare.replace(/\b(?:coming in|money coming|is coming|coming|expecting|expect|will get|will receive|receiving|getting paid for|from|in)\b/gi, ' ')) || 'Money coming', amount, date, text: s };
+  const STOPN = "(?:r?\\d|(?:by|on|the|for|before|until|money|back|him|her|them|some|about|around|and|to|from)\\b)";
+  if ((m = s.match(new RegExp(`\\b(?:i\\s+)?(?:still\\s+)?(?:owe|owing)\\s+([A-Z]?[a-z][\\w'-]*(?:\\s+(?!${STOPN})[A-Za-z][\\w'-]*)?)`, 'i'))) && !/^(?:you|it|them|him|her)$/i.test(m[1])) { const p = m[1].split(/\s+/).map(cap).join(' '); return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
+  if (/\bdebts?\b/i.test(lo) && amount) { const p = bare.replace(/\b(?:add|a|an|new|my|the|debt|debts|to|be|paid|pay|back|by|on|before|of|for|i|owe|need|must|it|is|due)\b/gi, ' ').replace(/[^\p{L}' -]/gu, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 3).map(cap).join(' ');
+    if (p) return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
   if ((m = s.match(/\b(?:i\s+)?(?:still\s+)?(?:owe|owing)\s+([A-Z]?[a-z][\w'-]*)/i)) || (m = s.match(/\bborrowed\s+(?:\S+\s+)?from\s+([A-Za-z][\w'-]*)/i))) { const p = cap(m[1]); return { type: 'debt', name: `${p} (debt)`, person: p, amount, date, text: s }; }
   if (/\b(want(?:s)? to buy|wanna buy|would like to buy|i'd like to buy|thinking (?:of|about) buying|wish(?:ing)? i could buy|planning to buy)\b/.test(lo)) return { type: 'wish', name: nameOf(bare.replace(/^.*?\b(?:buy|buying)\b/i, '')) || 'Something', amount, date, text: s };
   if (/\b(spent|bought|paid for)\b/.test(lo)) { const e = parseEntry(s); return { type: 'expense', name: e?.category || nameOf(bare.replace(/\b(spent|bought|on)\b/gi, ' ')) || 'Other', amount, date, text: s }; }
