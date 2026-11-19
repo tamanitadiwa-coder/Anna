@@ -50,6 +50,18 @@ try {
   t = await say('Remove the last added 5000'); R.ok(/^Remove the bill “Old thing”, R.5.000,00\?/.test(t), 'remove is understood locally first', t);
   const c0 = sent.length; await page.click('[data-act="ent-cancel"]'); await page.waitForTimeout(500);
   R.ok(sent.length === c0 + 1 && /misunderstood this message as: Remove the bill “Old thing”/.test(sent.at(-1).body.messages[1].content), 'Cancel sends what ANNA misread, to be checked online', sent.at(-1)?.body.messages[1].content);
+  // v1.5 free lookup: no key, only the looked-up words leave the phone
+  const looked = [];
+  await ctx.route(/wiktionary\.org|wikipedia\.org|open-meteo\.com/, async (route) => { const u = route.request().url(); looked.push(u);
+    const body = /wiktionary.*definition\/lekker/.test(u) ? { af: [{ partOfSpeech: 'Adjective', language: 'Afrikaans', definitions: [{ definition: 'nice, good' }] }] } : /geocoding/.test(u) ? { results: [{ name: 'Harare', country: 'Zimbabwe', latitude: -17.8, longitude: 31.0 }] } : /forecast/.test(u) ? { current: { temperature_2m: 27, weather_code: 2, wind_speed_10m: 12 }, daily: { temperature_2m_min: [16, 17], temperature_2m_max: [28, 29], precipitation_probability_max: [20, 60], weather_code: [2, 80] } } : null;
+    await route.fulfill(body ? { status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) } : { status: 404, body: '' }); });
+  const g0 = sent.length; t = await say('What does lekker mean?'); R.ok(/needs|offline|Groq/i.test(t) || looked.length === 0, 'free lookup is off by default (nothing looked up)', t);
+  await page.evaluate(() => { window.__anna.S.settings.lookup = true; });
+  t = await say('What does lekker mean?'); R.ok(/^“lekker” \(adjective\), Afrikaans: nice, good\nSource: Wiktionary/.test(t) && (await S(() => window.__anna.S.settings.words.some((w) => w.word === 'lekker'))), 'word meaning from Wiktionary, learned', t);
+  t = await say('weather in Harare'); R.ok(/^Weather in Harare, Zimbabwe: now 27°C, partly cloudy/.test(t), 'weather from Open-Meteo', t);
+  R.ok(looked.every((u) => !/gsk_|key=/.test(u)) && looked.some((u) => /definition\/lekker/.test(u)), 'only the looked-up words are sent, no key');
+  t = await say('ejima means twin sister'); R.ok(/^Got it: “ejima” means twin sister/.test(t) && (await S(() => window.__anna.S.settings.words.some((w) => w.word === 'ejima' && w.means === 'twin sister'))), 'teach slang directly', t);
+  R.ok(sent.length >= g0, 'lookups did not use the Groq helper');
   R.ok(errors.length === 0, 'no JavaScript errors', errors.join(' | '));
 } catch (e) { R.ok(false, 'unexpected error', e.stack); }
 try { await ctx.close(); } catch {} srv.close(); rmSync(dir, { recursive: true, force: true }); process.exit(R.finish() ? 0 : 1);

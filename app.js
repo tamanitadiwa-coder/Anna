@@ -8,7 +8,8 @@ import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
 import * as OL from './online.js';
-export const VERSION = '1.4.0';
+import * as LK from './lookup.js';
+export const VERSION = '1.5.0';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -221,6 +222,7 @@ const screens = {
       <div class="card"><h2>Anna logo</h2><div class="row" style="margin:8px 0">${brandLogo('biglogo sm')}<div class="mute grow">${logoUrl ? 'Your own logo is shown on the lock screen and at the top of every page.' : 'Using the default logo. Upload your own image (PNG or JPG); it stays on this device and is included in backups.'}</div></div>
         <div class="row wrap"><button class="btn sm" data-act="logo-pick">${logoUrl ? 'Replace logo…' : 'Upload logo…'}</button>${logoUrl ? '<button class="btn sage sm" data-act="logo-reset">Reset to default</button>' : ''}</div><input id="logofile" type="file" accept="image/*" hidden></div>
       <div class="card"><div class="swrow"><div class="grow"><b>Auto-save chat money entries (undo available)</b><div class="mute">Off: ANNA shows what she understood and waits for your tap.</div></div><button class="sw ${S.settings.autoMoney ? 'on' : ''}" data-act="automoney" aria-label="Auto-save chat money entries"></button></div></div>
+      <div class="card" id="lookupcard"><div class="swrow"><div class="grow"><b>Free lookup</b><div class="mute">No account, no key, no subscription. With data on, ANNA can answer “what does ___ mean” (Wiktionary), “who is / what is / tell me about ___” (Wikipedia) and “weather in ___” (Open-Meteo). Only the words being looked up are sent. Teach her slang any time: “ejima means …”. Live news, scores and prices still need a paid search.</div></div><button class="sw ${S.settings.lookup ? 'on' : ''}" data-act="lookup-on" role="switch" aria-checked="${!!S.settings.lookup}" aria-label="Free lookup"><i></i></button></div></div>
       ${onlineCard()}
       <div class="card"><h2>Web research</h2><div class="mute" style="margin:4px 0 8px">Not switched on. Questions about news, weather or other current events need a web search service you approve first. Until then ANNA says so and never guesses. Nothing leaves this device.</div><div class="mute">Options waiting for your approval:<br>• Tavily: 1,000 searches a month free, then about $0.008 each. Needs a Tavily API key.<br>• Brave Search API: about $5 per 1,000 searches, with a $5 monthly credit. Needs a Brave API key and a card on file.</div></div>
       <div class="card"><h2>Back up & restore</h2><div class="mute" style="margin:4px 0 12px">Safari can clear website data. Export a backup regularly and keep it in Files or iCloud. Backups are <b>encrypted with your password</b> and include tasks, reminders, money, business, memories, chat history, settings, your logo and your owner identity (not the AI model). To open one on another device you need the password that was set when it was made.</div>
@@ -365,7 +367,14 @@ function journalReply(text) {
 const reminderAsk = () => { const d = pendingReminder; return `Shall I remind you to “${d.title}” on ${TM.fmtDateTime(d.ts)}${d.repeat && d.repeat !== 'none' ? ', repeating ' + ({ daily: 'every day', weekly: 'every week', monthly: 'every month' }[d.repeat]) : ''}${d.hasTime === false ? ' (I picked 09:00, change it if you like)' : ''}?`; };
 async function sendChat(text, opts) {
   text = text.trim(); if (!text || AI.ai.busy || onlineBusy) return;
-  lastAsked = text; const tool = toolReply(OL.applyWords(text, S.settings.words || []));
+  lastAsked = text;
+  { const m = text.match(/^["“']?([\p{L}'-][\p{L}' -]{0,29}?)["”']?\s+means\s+(.{2,80}?)[.!]?$/iu); if (m && !/\d/.test(m[1]) && !/^(?:this|that|it|which|what|who|he|she|they|we|i|you|everything|nothing|something|which)$/i.test(m[1].trim())) { const w = { word: m[1].trim().toLowerCase(), means: m[2].trim() }; S.settings.words = OL.mergeWords(S.settings.words || [], [w]); return showTool(text, `Got it: “${w.word}” means ${w.means}. I’ll understand it from now on, even offline.`, opts); } }
+  { const li = S.settings.lookup && LK.intent(text); if (li && !['calc', 'clock', 'reminders', 'finance', 'memory', 'journal', 'staff'].includes(RT.route(text))) {
+    if (navigator.onLine === false) return showTool(text, 'That needs a quick lookup online, and you’re offline right now. Ask me again when you have data.', opts);
+    lastRoute = 'research'; toast('Looking it up…', { ms: 2000 }); let a; try { a = await LK.answer(li); } catch { a = { text: 'I couldn’t reach the free lookup just now. Try again in a moment.' }; }
+    if (a?.learned && !(S.settings.words || []).some((x) => x.word === a.learned.word)) S.settings.words = OL.mergeWords(S.settings.words || [], [a.learned]);
+    return showTool(text, a.text, opts); } }
+  const tool = toolReply(OL.applyWords(text, S.settings.words || []));
   if (tool) return showTool(text, tool, opts);
   if (!opts?.noOnline && OL.ready() && await onlineHelp(text)) return;
   return askBrain(text, opts);
@@ -558,6 +567,7 @@ const actions = {
   mmore: () => mutate(() => { S.settings.moneyMore = !S.settings.moneyMore; }, { close: false }),
   'inc-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
   'wish-del': async (id) => { LIFE.finance = LIFE.finance.filter((x) => x.id !== id); await LF.del('finance', id); render(); },
+  'lookup-on': () => mutate(() => { S.settings.lookup = !S.settings.lookup; }, { close: false }),
   'ol-on': () => { const c = OL.config(); if (!c.on && !c.key) { toast('Paste your free Groq API key first, then switch this on.', { ms: 5000 }); return; } OL.setConfig({ on: !c.on }); render(); },
   'ol-forget': () => { OL.setConfig({ key: '', on: false }); render(); toast('Online key removed from this phone.'); },
   'ol-word-del': (word) => mutate(() => { S.settings.words = (S.settings.words || []).filter((x) => x.word !== word); }, { close: false }),
