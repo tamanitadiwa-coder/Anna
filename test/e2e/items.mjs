@@ -55,7 +55,7 @@ try {
   R.ok(/Food[\s\S]*R 200,00[\s\S]*Total\s*R 200,00/.test(bought), 'Bought this month with total', bought);
   R.ok(!(await page.locator('#screen .donutw, #screen .bars').count()), 'no charts unless More details is open');
   await page.click('#payfirst .prow:has-text("Sipho")'); await page.waitForTimeout(200);
-  await page.click('[data-act="close"]'); await page.waitForTimeout(200); R.ok(/Sipho/.test(await page.locator('#payfirst').innerText()), 'Not paid yet leaves the bill unpaid');
+  await page.click('#notpaid'); await page.waitForTimeout(200); R.ok(/Sipho/.test(await page.locator('#payfirst').innerText()), 'Not paid yet leaves the bill unpaid');
   await page.click('#payfirst .prow:has-text("Sipho")'); await page.click('[data-act="pay-do"][data-id="exp"]'); await page.waitForTimeout(300);
   R.ok(!/Sipho/.test(await page.locator('#payfirst').innerText()) && /R 1 500,00/.test(nb(await page.locator('#today').innerText())), 'tap to mark paid (money now updates)');
   R.ok(/Left after all bills\s*R 7 000,00/i.test(nb(await page.locator('#today').innerText())), 'left after all bills updates when a bill is paid', nb(await page.locator('#today').innerText()));

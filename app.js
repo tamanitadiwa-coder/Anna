@@ -792,7 +792,7 @@ function payPanel() { const b = byId(S.bills, payId); if (!b) return '';
   <div class="mute" style="margin:4px 0 12px">${money(b.amount_cents)} · due ${dstr(b.due_at)}</div>
   <button class="btn full" data-act="pay-do" data-id="exp">I paid it: take ${money(b.amount_cents)} off my money</button>
   <button class="btn soft full" style="margin-top:8px" data-act="pay-do" data-id="only">Already paid: my money now is up to date</button>
-  <button class="btn sage full" style="margin-top:8px" data-act="close">Not paid yet</button>
+  <button class="btn sage full" style="margin-top:8px" data-act="close" id="notpaid">Not paid yet</button>
   <button class="btn sage full" style="margin-top:8px" data-act="edit" data-k="bill" data-id="${b.id}">Change amount or date</button></div>`; }
 function affordData() { const ym = monthNow(), [m0, m1] = L.monthRange(), ms = L.monthSummary(S);
   return { budget: budgetFor(ym), recorded: { income: ms.income, expenses: ms.expense }, unpaidBills: S.bills.filter((b) => !b.paid && b.due_at < m1) }; }
