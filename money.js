@@ -149,6 +149,7 @@ const clean = (s) => String(s || '').replace(/\b(this month|per month|a month|mo
 const cap = (s) => s.replace(/^./, (c) => c.toUpperCase());
 // Turns a short chat sentence into a money entry, or null. Amounts come from the text only.
 export function parseEntry(text) {
+  if (REMOVE_RE.test(text || '')) return null;
   const t = String(text || '').trim(), lo = t.toLowerCase(), amt = amountIn(t);
   let m;
   if ((m = lo.match(/^(?:i\s+)?(?:have\s+)?(?:cancell?ed|stopped|ended|no longer pay(?:ing)?(?: for)?|dropped)\s+(?:my\s+|the\s+)?(.+)$/))) return { type: 'billCancel', name: cap(clean(t.slice(t.length - m[1].length))) };
@@ -164,6 +165,14 @@ export function parseEntry(text) {
   return null;
 }
 // "Change all due dates to after pay on the 26th", "move my bills to the 1st", "payday is the 26th" (no amount)
+// "Remove the last added 5000", "delete the Netflix bill", "undo that" → find it and remove it (never a new bill)
+export const REMOVE_RE = /^\s*(?:please\s+|can you\s+|pls\s+)?(?:remove|delete|undo|cancel|take (?:off|out|away)|get rid of|scrap|erase|drop|clear)\b/i;
+export function parseRemove(text) {
+  if (!REMOVE_RE.test(text || '')) return null;
+  const rest = String(text).replace(REMOVE_RE, ' '), amount = amountOf(rest), last = /\b(?:last|latest|recent|newest|just|that|it)\b/i.test(rest);
+  const name = rest.replace(AMT_ALL, ' ').replace(/\b(?:the|a|an|my|last|latest|recent|newest|one|added|i|just|that|it|item|entry|thing|bill|bills|expense|payment|from|money|please|pls|rand)\b/gi, ' ').replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return { type: 'remove', amount, name, last: last || (!name && !amount) };
+}
 export function parseMoveDue(text, now = Date.now()) {
   const lo = String(text || '').toLowerCase(), d = dateIn(text, now), pay = /\b(?:pay ?day|pay|paid|salary)\b/.test(lo), billsWord = /\b(?:due dates?|bills|payments|debts|everything)\b/.test(lo);
   if ((/\b(?:change|move|set|put|push|shift|make)\b/.test(lo) || /\bdue dates?\b/.test(lo)) && billsWord && (d || /\bafter (?:my )?pay(?:day)?\b/.test(lo))) return { type: 'moveDue', date: d ? d.date : null, pay: pay && !!d };

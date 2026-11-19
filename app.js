@@ -7,7 +7,7 @@ import * as LF from './life.js';
 import * as TM from './time.js';
 import * as M from './money.js';
 import * as RT from './router.js';
-export const VERSION = '1.3.1';
+export const VERSION = '1.3.2';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -324,6 +324,7 @@ function toolReply(text) {
   if (BK) { const r = booksAnswer(text); if (r) return r; }
   if (/^\s*(start )?books day\s*$/i.test(text)) { BK = { step: 0, month: M.booksMonth() }; setTimeout(() => booksAsk(), 0); return 'Let’s close the month.'; }
   if (pendingBatch) { const r = batchAnswer(text); if (r) return r; }
+  { const rm = M.parseRemove(text); if (rm) { lastRoute = 'finance'; const t = findToRemove(rm); if (!t) return `I couldn’t find ${rm.amount ? M.money(rm.amount.cents) + ' ' : ''}${rm.name ? `“${rm.name}” ` : ''}in your money. Open Money and tap the item to change or delete it.`; pendingEntry = { type: 'remove', target: t, text }; return describeEntry(pendingEntry); } }
   { const mv = M.parseMoveDue(text); if (mv) { lastRoute = 'finance'; if (mv.type === 'moveDue' && !mv.date) { const pd = moneyView().payday; if (!pd) return 'When do you get paid? For example: “move all due dates to the 26th”.'; mv.date = pd.date; } if (mv.type === 'moveDue' && !S.bills.some((b) => !b.paid)) return 'You have no unpaid bills to move.'; pendingEntry = { ...mv, text }; return describeEntry(mv); } }
   if (!['reminders', 'calc', 'staff', 'memory', 'journal', 'research'].includes(RT.route(text))) { const mb = M.parseItems(text); if (mb) { lastRoute = 'finance'; return batchStart(mb, text); } }
   lastRoute = RT.route(text);
@@ -364,8 +365,9 @@ async function sendChat(text, opts) {
   text = text.trim(); if (!text || AI.ai.busy) return;
   const tool = toolReply(text);
   if (tool) { const tag = pendingReminder ? 'reminders' : pendingEntry || pendingBatch ? 'finance' : lastRoute !== 'qwen' ? lastRoute : 'clock', msg = { role: 'assistant', content: tool, at: Date.now(), tool: tag }; S.chat.push({ role: 'user', content: text, at: Date.now() }, msg); pendingRemember = null; paintChat(true); await save();
-    if (S.settings.autoMoney && pendingEntry) return saveEntry(); if (S.settings.autoMoney && pendingBatch && !pendingBatch.ask.length) return batchSave();
+    if (S.settings.autoMoney && pendingEntry && pendingEntry.type !== 'remove') return saveEntry(); if (S.settings.autoMoney && pendingBatch && !pendingBatch.ask.length) return batchSave();
     if (AI.ai.state === 'ready' && RT.PHRASE.has(tag) && !pendingEntry && !pendingBatch && !pendingReminder && !BK) await phrase(msg, text); return; }
+  if (AI.ai.state === 'cached' && !AI.ai.crashed) { toast('Waking ANNA’s brain…'); await AI.load(); }
   if (AI.ai.state !== 'ready') { S.chat.push({ role: 'user', content: text, at: Date.now() }, { role: 'assistant', content: 'My AI brain isn’t awake right now, so for now I can set reminders and tell you times, dates and public holidays. Turn on “ANNA is awake” on Home to talk about anything else.', at: Date.now(), tool: 'clock' }); paintChat(true); await save(); return; }
   const hist = S.chat.slice(), a = { role: 'assistant', content: '', at: 0 }; S.chat.push({ role: 'user', content: text, at: Date.now() }, a); if (opts?.noRemember) pendingRemember = null; else offerRemember(text); paintChat(true); save();
   try {
@@ -827,6 +829,7 @@ function describeEntry(e) {
     case 'billCancel': return `Remove the bill “${b?.name || e.name}”${b ? ` (${m(b.amount_cents)})` : ''}?`;
     case 'billPaid': return `Mark ${bu.name} (${m(e.amount || bu.amount_cents)}) as paid and record it as spent?`;
     case 'saved': return `Record ${m(e.amount)} saved this month?`;
+    case 'remove': return `Remove the ${e.target.label}, ${m(e.target.cents)}?`;
     case 'moveDue': { const n = S.bills.filter((x) => !x.paid).length; return `Move ${n === 1 ? 'your unpaid bill' : `all ${n} unpaid bills`} to ${dstr(e.date)}${e.pay ? `, and set payday to ${dstr(e.date)}` : ''}?`; }
     case 'paydayDate': return `Set payday to ${dstr(e.date)}?`;
     default: return `Note ${e.name}, ${m(e.amount)}, for next month?`;
@@ -838,6 +841,21 @@ function entryReply(text) {
   if (e.type === 'billCancel' && !findBill(e.name) && !(monthRec()?.lines || []).some((l) => M.sameName(l.name, e.name))) return `I couldn’t find a bill called “${e.name}”.`;
   pendingEntry = { ...e, text }; return describeEntry(e);
 }
+// newest first: everything money-shaped ANNA can remove from chat
+function findToRemove(rm) {
+  const want = rm.amount?.cents, nm = (rm.name || '').toLowerCase(), all = [
+    ...S.bills.map((b, i) => ({ kind: 'bill', id: b.id, label: `${b.kind === 'debt' ? 'debt' : 'bill'} “${b.name}”`, name: b.name, cents: b.amount_cents, at: b.created_at || i, paid: b.paid })),
+    ...S.tx.map((t) => ({ kind: 'tx', id: t.id, label: `${t.kind} “${t.note || t.category}” on ${dstr(t.occurred_at)}`, name: `${t.note || ''} ${t.category || ''}`, cents: t.amount_cents, at: t.occurred_at || 0 })),
+    ...LIFE.finance.filter((x) => x.type === 'incoming' || x.type === 'wish').map((x) => ({ kind: 'fin', id: x.id, label: x.type === 'wish' ? `wish “${x.name}”` : `money coming “${x.name}” on ${dstr(x.date)}`, name: x.name, cents: x.amount ?? x.price, at: x.at || 0 }))];
+  const hit = all.filter((c) => (!want || c.cents === want) && (!nm || String(c.name).toLowerCase().includes(nm) || nm.includes(String(c.name).toLowerCase())) && !c.paid);
+  return hit.sort((a, b) => b.at - a.at)[0] || null;
+}
+async function removeEntry(e) {
+  const t = e.target, before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: [] };
+  if (t.kind === 'bill') S.bills = S.bills.filter((b) => b.id !== t.id); else if (t.kind === 'tx') S.tx = S.tx.filter((x) => x.id !== t.id);
+  else { const r = LIFE.finance.find((x) => x.id === t.id); before.fin.push({ id: t.id, prev: r ? { ...r } : null }); LIFE.finance = LIFE.finance.filter((x) => x.id !== t.id); await LF.del('finance', t.id); }
+  await save(); const uid = L.uid(); entryUndo[uid] = before; render(); await say(`Removed the ${t.label}, ${M.money(t.cents)}.`, { undo: uid });
+}
 async function saveDates(e) {
   const p = LIFE.finance.find((x) => x.id === 'payday'), before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), fin: [{ id: 'payday', prev: p ? { ...p } : null }] }, out = [];
   if (e.type === 'moveDue') { const un = S.bills.filter((b) => !b.paid); un.forEach((b) => { b.due_at = e.date; }); out.push(`Moved ${un.length} unpaid bill${un.length === 1 ? '' : 's'} to ${dstr(e.date)}.`); }
@@ -847,6 +865,7 @@ async function saveDates(e) {
 async function saveEntry() {
   const e = pendingEntry; if (!e) return; pendingEntry = null; M.setCurrency(curCode());
   if (e.type === 'moveDue' || e.type === 'paydayDate') return saveDates(e);
+  if (e.type === 'remove') return removeEntry(e);
   const existing = monthRec(), month = monthRec(true);
   const before = { tx: JSON.parse(JSON.stringify(S.tx)), bills: JSON.parse(JSON.stringify(S.bills)), month: existing ? JSON.parse(JSON.stringify(existing)) : null, monthId: month.id };
   month.spent ||= {}; month.saved ||= 0; month.next ||= [];
@@ -854,7 +873,7 @@ async function saveEntry() {
   let done = '';
   if (e.type === 'income') { S.tx.push({ id: L.uid(), kind: 'income', amount_cents: e.amount, category: e.label, note: null, occurred_at: now }); const x = month.lines.find((l) => l.id === 'extra'); if (x) x.cents += e.amount; else month.lines.push({ id: 'extra', name: 'Extra income', kind: 'income', cents: e.amount }); done = `Saved: ${M.money(e.amount)} ${e.label.toLowerCase()}.`; }
   else if (e.type === 'expense') { S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: e.amount, category: e.category, note: null, occurred_at: now }); month.spent[e.category] = (month.spent[e.category] || 0) + e.amount; done = `Saved: ${M.money(e.amount)} on ${e.category}.`; }
-  else if (e.type === 'billNew' || (e.type === 'billSet' && !findBill(e.name) && !line(e.name))) { const id = L.uid(); S.bills.push({ id, name: e.name, amount_cents: e.amount, due_at: endOfMonth, priority: 2, repeat_monthly: e.thisMonthOnly ? 0 : 1, paid: 0, paid_at: null }); const ln = line(e.name); if (ln && !e.thisMonthOnly) ln.cents = e.amount; else month.lines.push({ id: 'c-' + id.slice(0, 8), name: e.name, kind: 'bill', cents: e.amount, oneMonth: !!e.thisMonthOnly }); done = `Saved: ${e.name}, ${M.money(e.amount)}${e.thisMonthOnly ? ' (this month)' : ' a month'}. Priority 2, due ${dstr(endOfMonth)}: change it in Money → Bills.`; }
+  else if (e.type === 'billNew' || (e.type === 'billSet' && !findBill(e.name) && !line(e.name))) { const id = L.uid(); S.bills.push({ id, created_at: now, name: e.name, amount_cents: e.amount, due_at: endOfMonth, priority: 2, repeat_monthly: e.thisMonthOnly ? 0 : 1, paid: 0, paid_at: null }); const ln = line(e.name); if (ln && !e.thisMonthOnly) ln.cents = e.amount; else month.lines.push({ id: 'c-' + id.slice(0, 8), name: e.name, kind: 'bill', cents: e.amount, oneMonth: !!e.thisMonthOnly }); done = `Saved: ${e.name}, ${M.money(e.amount)}${e.thisMonthOnly ? ' (this month)' : ' a month'}. Priority 2, due ${dstr(endOfMonth)}: change it in Money → Bills.`; }
   else if (e.type === 'billSet') { const b = findBill(e.name), l = line(e.name); if (b) b.amount_cents = e.amount; if (l) l.cents = e.amount; done = `Saved: ${(b || l).name} is now ${M.money(e.amount)}.`; }
   else if (e.type === 'billCancel') { const b = findBill(e.name), l = line(e.name); if (b) S.bills = S.bills.filter((x) => x !== b); if (l) { if (l.id.startsWith('c-')) month.lines = month.lines.filter((x) => x !== l); else l.cents = 0; } done = `Saved: ${(b || l).name} removed.`; }
   else if (e.type === 'billPaid') { const b = findBill(e.name, true); if (e.amount) b.amount_cents = e.amount; L.payBill(S, b.id, { recordExpense: true, now }); done = `Saved: ${b.name} marked paid.`; }
@@ -958,7 +977,7 @@ async function batchSave() {
     else if (x.type === 'income' && x.date) fin.push({ id: 'payday', type: 'payday', amount: x.amount, date: x.date, name: x.name, at: now });
     else if (x.type === 'income') S.tx.push({ id: L.uid(), kind: 'income', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
     else if (x.type === 'expense') S.tx.push({ id: L.uid(), kind: 'expense', amount_cents: x.amount, category: x.name, note: null, occurred_at: now });
-    else S.bills.push({ id: L.uid(), name: x.name, amount_cents: x.amount, due_at: due(x), priority: 2, repeat_monthly: 0, paid: 0, paid_at: null, kind: x.type === 'debt' ? 'debt' : 'planned', ...(x.person ? { person: x.person } : {}), ...(x.setAside ? { set_aside: 1 } : {}) });
+    else S.bills.push({ id: L.uid(), created_at: now, name: x.name, amount_cents: x.amount, due_at: due(x), priority: 2, repeat_monthly: 0, paid: 0, paid_at: null, kind: x.type === 'debt' ? 'debt' : 'planned', ...(x.person ? { person: x.person } : {}), ...(x.setAside ? { set_aside: 1 } : {}) });
   }
   for (const r of fin) { LIFE.finance = LIFE.finance.filter((y) => y.id !== r.id).concat(r); await LF.put('finance', r); }
   await save();

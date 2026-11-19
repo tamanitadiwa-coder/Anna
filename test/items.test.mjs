@@ -67,3 +67,8 @@ test('v1.3.1: ordinals are dates not amounts; move due dates; bills due on payda
   const pd = new Date(2026, 10, 26, 12).getTime(), p = M.moneyPlan({ cash: 410000, bills: [{ name: 'A', amount_cents: 330000, due_at: pd }], incomes: [{ name: 'Payday', amount: 1050000, date: pd }] }, NOW);
   assert.deepEqual([p.safeNow, p.periods[1].dueTotal, p.periods[1].safe, p.left], [410000, 330000, 720000, 1130000]);
 });
+test('v1.3.2: remove commands are never new bills', () => {
+  for (const t of ['Remove the last added 5000', 'delete the Netflix bill', 'undo that', 'cancel the R300 for Sipho']) { assert.equal(M.parseEntry(t), null, t); assert.equal(M.parseRemove(t).type, 'remove', t); }
+  assert.deepEqual([M.parseRemove('Remove the last added 5000').amount.cents, M.parseRemove('Remove the last added 5000').last], [500000, true]);
+  assert.equal(M.parseRemove('delete the Netflix bill').name, 'Netflix'); assert.equal(M.parseRemove('Netflix R99'), null);
+});

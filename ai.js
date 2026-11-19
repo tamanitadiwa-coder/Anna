@@ -98,8 +98,13 @@ export const isGone = (e) => /disposed|destroyed|device (?:was |is )?lost|instan
 export async function ask(messages, onText, opts = {}) {
   try { return await ask1(messages, onText, opts); }
   catch (e) { if (!isGone(e)) throw e; // iPhone took the GPU back while ANNA was in the background: wake the brain again and retry once
-    loaded = false; try { await eng?.unload(); } catch {} eng = null; set({ state: 'unknown', busy: false }); await refresh(); if (ai.state !== 'cached') throw e;
-    await load(); if (ai.state !== 'ready') throw new Error('ANNA’s brain had to restart and could not wake up. Tap “ANNA is awake” on Home.'); return ask1(messages, onText, opts); }
+    for (let i = 0; i < 2; i++) {
+      loaded = false; try { await eng?.unload(); } catch {} eng = null; set({ state: 'unknown', busy: false, error: '' });
+      await new Promise((r) => setTimeout(r, 1200 * (i + 1))); await refresh(); if (ai.state !== 'cached') break; // give iOS a moment to hand the GPU back
+      await load(); if (ai.state === 'ready') { try { return await ask1(messages, onText, opts); } catch (e2) { if (!isGone(e2)) throw e2; } }
+    }
+    const why = ai.error ? ` (${ai.error})` : ''; set({ error: '' });
+    throw new Error(`Your iPhone switched off ANNA’s brain while she was in the background, and she couldn’t wake up again${why}. Close ANNA fully and open it again, then send your message once more.`); }
 }
 async function ask1(messages, onText, { maxTokens = 320 } = {}) {
   if (ai.state !== 'ready' || !eng) throw new Error('ANNA’s brain is not loaded.');
